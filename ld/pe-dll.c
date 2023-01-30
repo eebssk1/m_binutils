@@ -27,6 +27,8 @@
 #include "safe-ctype.h"
 #include "ctf-api.h"
 
+#include <errno.h>
+#include <limits.h>
 #include <time.h>
 
 #include "ld.h"
@@ -1228,9 +1230,36 @@ fill_edata (bfd *abfd, struct bfd_link_info *info ATTRIBUTE_UNUSED)
 
   memset (edata_d, 0, edata_sz);
 
-  if (pe_data (abfd)->timestamp == -1)
-    H_PUT_32 (abfd, time (0), edata_d + 4);
-  else
+  if (pe_data (abfd)->timestamp == -1) {
+    time_t now;
+    char *source_date_epoch;
+    unsigned long long epoch;
+    char *endptr;
+
+    now = time(NULL);
+    source_date_epoch = getenv("SOURCE_DATE_EPOCH");
+    if (source_date_epoch) {
+      errno = 0;
+      epoch = strtoull(source_date_epoch, &endptr, 10);
+      if ((errno == ERANGE && (epoch == ULLONG_MAX || epoch == 0))
+	  || (errno != 0 && epoch == 0)) {
+	einfo("Environment variable $SOURCE_DATE_EPOCH: strtoull: %s\n",
+	      strerror(errno));
+      } else if (endptr == source_date_epoch) {
+	einfo("Environment variable $SOURCE_DATE_EPOCH: No digits were found: %s\n",
+	      endptr);
+      } else if (*endptr != '\0') {
+	einfo("Environment variable $SOURCE_DATE_EPOCH: Trailing garbage: %s\n",
+	      endptr);
+      } else if (epoch > ULONG_MAX) {
+	einfo("Environment variable $SOURCE_DATE_EPOCH: value must be smaller than or equal to: %lu but was found to be: %llu\n",
+	      ULONG_MAX, epoch);
+      } else {
+	now = epoch;
+      }
+    }
+    H_PUT_32 (abfd, now, edata_d + 4);
+  } else
     H_PUT_32 (abfd, pe_data (abfd)->timestamp, edata_d + 4);
 
   if (pe_def_file->version_major != -1)
@@ -2895,6 +2924,7 @@ pe_dll_generate_implib (def_file *def, const char *impfilename, struct bfd_link_
 
   bfd_set_format (outarch, bfd_archive);
   outarch->has_armap = 1;
+  outarch->flags |= BFD_DETERMINISTIC_OUTPUT;
 
   /* Work out a reasonable size of things to put onto one line.  */
   ar_head = make_head (outarch);

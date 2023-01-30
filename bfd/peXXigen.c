@@ -74,6 +74,9 @@
 #include <wchar.h>
 #include <wctype.h>
 
+#include <errno.h>
+#include <limits.h>
+
 /* NOTE: it's strange to be including an architecture specific header
    in what's supposed to be general (to PE/PEI) code.  However, that's
    where the definitions are, and they don't vary per architecture
@@ -847,9 +850,36 @@ _bfd_XXi_only_swap_filehdr_out (bfd * abfd, void * in, void * out)
 
   /* Use a real timestamp by default, unless the no-insert-timestamp
      option was chosen.  */
-  if ((pe_data (abfd)->timestamp) == -1)
-    H_PUT_32 (abfd, time (0), filehdr_out->f_timdat);
-  else
+  if ((pe_data (abfd)->timestamp) == -1) {
+    time_t now;
+    char *source_date_epoch;
+    unsigned long long epoch;
+    char *endptr;
+
+    now = time (NULL);
+    source_date_epoch = getenv("SOURCE_DATE_EPOCH");
+    if (source_date_epoch) {
+      errno = 0;
+      epoch = strtoull(source_date_epoch, &endptr, 10);
+      if ((errno == ERANGE && (epoch == ULLONG_MAX || epoch == 0))
+          || (errno != 0 && epoch == 0)) {
+        _bfd_error_handler("Environment variable $SOURCE_DATE_EPOCH: strtoull: %s\n",
+                           strerror(errno));
+      } else if (endptr == source_date_epoch) {
+        _bfd_error_handler("Environment variable $SOURCE_DATE_EPOCH: No digits were found: %s\n",
+                           endptr);
+      } else if (*endptr != '\0') {
+        _bfd_error_handler("Environment variable $SOURCE_DATE_EPOCH: Trailing garbage: %s\n",
+                           endptr);
+      } else if (epoch > ULONG_MAX) {
+        _bfd_error_handler("Environment variable $SOURCE_DATE_EPOCH: value must be smaller than or equal to: %lu but was found to be: %llu\n",
+                           ULONG_MAX, epoch);
+      } else {
+        now = epoch;
+      }
+    }
+    H_PUT_32 (abfd, now, filehdr_out->f_timdat);
+  } else
     H_PUT_32 (abfd, pe_data (abfd)->timestamp, filehdr_out->f_timdat);
 
   PUT_FILEHDR_SYMPTR (abfd, filehdr_in->f_symptr,

@@ -342,7 +342,7 @@ gld${EMULATION_NAME}_add_options
      OPTION_USE_NUL_PREFIXED_IMPORT_TABLES},
     {"no-leading-underscore", no_argument, NULL, OPTION_NO_LEADING_UNDERSCORE},
     {"leading-underscore", no_argument, NULL, OPTION_LEADING_UNDERSCORE},
-    {"insert-timestamp", no_argument, NULL, OPTION_INSERT_TIMESTAMP},
+    {"insert-timestamp", optional_argument, NULL, OPTION_INSERT_TIMESTAMP},
     {"no-insert-timestamp", no_argument, NULL, OPTION_NO_INSERT_TIMESTAMP},
 #ifdef DLL_SUPPORT
     /* getopt allows abbreviations, so we do this to stop it
