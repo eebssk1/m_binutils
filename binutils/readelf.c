@@ -304,7 +304,7 @@ typedef struct filedata
   uint64_t *           mipsxlat;
   uint64_t             gnusymidx;
   char *               program_interpreter;
-  uint64_t             dynamic_info[DT_ENCODING];
+  uint64_t             dynamic_info[DT_RELRENT + 1];
   uint64_t             dynamic_info_DT_GNU_HASH;
   uint64_t             dynamic_info_DT_MIPS_XHASH;
   elf_section_list *   symtab_shndx_list;
@@ -4044,6 +4044,7 @@ get_machine_flags (Filedata * filedata, unsigned e_flags, unsigned e_machine)
 	    case E_MIPS_MACH_OCTEON3: strcat (buf, ", octeon3"); break;
 	    case E_MIPS_MACH_XLR:  strcat (buf, ", xlr"); break;
 	    case E_MIPS_MACH_IAMR2:  strcat (buf, ", interaptiv-mr2"); break;
+	    case E_MIPS_MACH_ALLEGREX: strcat(buf, ", allegrex"); break;
 	    case 0:
 	    /* We simply ignore the field in this case to avoid confusion:
 	       MIPS ELF does not specify EF_MIPS_MACH, it is a GNU
@@ -4640,6 +4641,7 @@ get_segment_type (Filedata * filedata, unsigned long p_type)
     case PT_GNU_PROPERTY: return "GNU_PROPERTY";
     case PT_GNU_SFRAME: return "GNU_SFRAME";
 
+    case PT_OPENBSD_MUTABLE: return "OPENBSD_MUTABLE";
     case PT_OPENBSD_RANDOMIZE: return "OPENBSD_RANDOMIZE";
     case PT_OPENBSD_WXNEEDED: return "OPENBSD_WXNEEDED";
     case PT_OPENBSD_BOOTDATA: return "OPENBSD_BOOTDATA";
@@ -14007,6 +14009,60 @@ target_specific_reloc_handling (Filedata *filedata,
 
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      {
+	switch (reloc_type)
+	  {
+	    /* For .uleb128 .LFE1-.LFB1, loongarch write 0 to object file
+	       at assembly time.  */
+	    case 107: /* R_LARCH_ADD_ULEB128.  */
+	    case 108: /* R_LARCH_SUB_ULEB128.  */
+	      {
+		uint64_t value = 0;
+		unsigned int reloc_size = 0;
+		int leb_ret = 0;
+
+		if (reloc->r_offset < (size_t) (end - start))
+		  value = read_leb128 (start + reloc->r_offset, end, false,
+				       &reloc_size, &leb_ret);
+		if (leb_ret != 0 || reloc_size == 0 || reloc_size > 8)
+		  error (_("LoongArch ULEB128 field at 0x%lx contains invalid "
+			   "ULEB128 value\n"),
+			 (long) reloc->r_offset);
+
+		else if (sym_index >= num_syms)
+		  error (_("%s reloc contains invalid symbol index "
+			   "%" PRIu64 "\n"),
+			 (reloc_type == 107
+			  ? "R_LARCH_ADD_ULEB128"
+			  : "R_LARCH_SUB_ULEB128"),
+			 sym_index);
+		else
+		  {
+		    if (reloc_type == 107)
+		      value += reloc->r_addend + symtab[sym_index].st_value;
+		    else
+		      value -= reloc->r_addend + symtab[sym_index].st_value;
+
+		    /* Write uleb128 value to p.  */
+		    bfd_byte *p = start + reloc->r_offset;
+		    do
+		      {
+			bfd_byte c = value & 0x7f;
+			value >>= 7;
+			if (--reloc_size != 0)
+			  c |= 0x80;
+			*p++ = c;
+		      }
+		    while (reloc_size);
+		  }
+
+		return true;
+	      }
+	  }
+	break;
+      }
+
     case EM_MSP430:
     case EM_MSP430_OLD:
       {
@@ -14029,8 +14085,8 @@ target_specific_reloc_handling (Filedata *filedata,
 	  case 23: /* R_MSP430X_GNU_SUB_ULEB128 */
 	    /* PR 21139.  */
 	    if (sym_index >= num_syms)
-	      error (_("MSP430 SYM_DIFF reloc contains invalid symbol index"
-		       " %" PRIu64 "\n"), sym_index);
+	      error (_("%s reloc contains invalid symbol index "
+		       "%" PRIu64 "\n"), "MSP430 SYM_DIFF", sym_index);
 	    else
 	      saved_sym = symtab + sym_index;
 	    return true;
@@ -14080,9 +14136,8 @@ target_specific_reloc_handling (Filedata *filedata,
 			   " contains invalid ULEB128 value\n"),
 			 reloc->r_offset);
 		else if (sym_index >= num_syms)
-		  error (_("MSP430 reloc contains invalid symbol index "
-			   "%" PRIu64 "\n"),
-			 sym_index);
+		  error (_("%s reloc contains invalid symbol index "
+			   "%" PRIu64 "\n"), "MSP430", sym_index);
 		else
 		  {
 		    value = reloc->r_addend + (symtab[sym_index].st_value
@@ -14127,9 +14182,8 @@ target_specific_reloc_handling (Filedata *filedata,
 	    return true;
 	  case 33: /* R_MN10300_SYM_DIFF */
 	    if (sym_index >= num_syms)
-	      error (_("MN10300_SYM_DIFF reloc contains invalid symbol index "
-		       "%" PRIu64 "\n"),
-		     sym_index);
+	      error (_("%s reloc contains invalid symbol index "
+		       "%" PRIu64 "\n"), "MN10300_SYM_DIFF", sym_index);
 	    else
 	      saved_sym = symtab + sym_index;
 	    return true;
@@ -14142,9 +14196,8 @@ target_specific_reloc_handling (Filedata *filedata,
 		uint64_t value;
 
 		if (sym_index >= num_syms)
-		  error (_("MN10300 reloc contains invalid symbol index "
-			   "%" PRIu64 "\n"),
-			 sym_index);
+		  error (_("%s reloc contains invalid symbol index "
+			   "%" PRIu64 "\n"), "MN10300", sym_index);
 		else
 		  {
 		    value = reloc->r_addend + (symtab[sym_index].st_value
@@ -14187,8 +14240,8 @@ target_specific_reloc_handling (Filedata *filedata,
 	  case 0x80: /* R_RL78_SYM.  */
 	    saved_sym1 = saved_sym2;
 	    if (sym_index >= num_syms)
-	      error (_("RL78_SYM reloc contains invalid symbol index "
-		       "%" PRIu64 "\n"), sym_index);
+	      error (_("%s reloc contains invalid symbol index "
+		       "%" PRIu64 "\n"), "RL78_SYM", sym_index);
 	    else
 	      {
 		saved_sym2 = symtab[sym_index].st_value;
@@ -14733,6 +14786,8 @@ is_32bit_inplace_add_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 50; /* R_LARCH_ADD32.  */
     case EM_RISCV:
       return reloc_type == 35; /* R_RISCV_ADD32.  */
     default:
@@ -14749,6 +14804,8 @@ is_32bit_inplace_sub_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 55; /* R_LARCH_SUB32.  */
     case EM_RISCV:
       return reloc_type == 39; /* R_RISCV_SUB32.  */
     default:
@@ -14765,6 +14822,8 @@ is_64bit_inplace_add_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 51; /* R_LARCH_ADD64.  */
     case EM_RISCV:
       return reloc_type == 36; /* R_RISCV_ADD64.  */
     default:
@@ -14781,6 +14840,8 @@ is_64bit_inplace_sub_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 56; /* R_LARCH_SUB64.  */
     case EM_RISCV:
       return reloc_type == 40; /* R_RISCV_SUB64.  */
     default:
@@ -14797,6 +14858,8 @@ is_16bit_inplace_add_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 48; /* R_LARCH_ADD16.  */
     case EM_RISCV:
       return reloc_type == 34; /* R_RISCV_ADD16.  */
     default:
@@ -14813,6 +14876,8 @@ is_16bit_inplace_sub_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 53; /* R_LARCH_SUB16.  */
     case EM_RISCV:
       return reloc_type == 38; /* R_RISCV_SUB16.  */
     default:
@@ -14829,6 +14894,8 @@ is_8bit_inplace_add_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 47; /* R_LARCH_ADD8.  */
     case EM_RISCV:
       return reloc_type == 33; /* R_RISCV_ADD8.  */
     default:
@@ -14845,8 +14912,25 @@ is_8bit_inplace_sub_reloc (Filedata * filedata, unsigned int reloc_type)
   /* Please keep this table alpha-sorted for ease of visual lookup.  */
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 52; /* R_LARCH_SUB8.  */
     case EM_RISCV:
       return reloc_type == 37; /* R_RISCV_SUB8.  */
+    default:
+      return false;
+    }
+}
+
+/* Like is_32bit_abs_reloc except that it returns TRUE iff RELOC_TYPE is
+   a 6-bit inplace add RELA relocation used in DWARF debug sections.  */
+
+static bool
+is_6bit_inplace_add_reloc (Filedata * filedata, unsigned int reloc_type)
+{
+  switch (filedata->file_header.e_machine)
+    {
+    case EM_LOONGARCH:
+      return reloc_type == 105; /* R_LARCH_ADD6.  */
     default:
       return false;
     }
@@ -14860,6 +14944,8 @@ is_6bit_inplace_sub_reloc (Filedata * filedata, unsigned int reloc_type)
 {
   switch (filedata->file_header.e_machine)
     {
+    case EM_LOONGARCH:
+      return reloc_type == 106; /* R_LARCH_SUB6.  */
     case EM_RISCV:
       return reloc_type == 52; /* R_RISCV_SUB6.  */
     default:
@@ -15107,7 +15193,8 @@ apply_relocations (Filedata *filedata,
 	      reloc_inplace = true;
 	    }
 	  else if ((reloc_subtract = is_6bit_inplace_sub_reloc (filedata,
-								reloc_type)))
+								reloc_type))
+		   || is_6bit_inplace_add_reloc (filedata, reloc_type))
 	    {
 	      reloc_size = 1;
 	      reloc_inplace = true;
@@ -15199,7 +15286,8 @@ apply_relocations (Filedata *filedata,
 		        reloc_size);
 	    }
 	  else if (is_6bit_abs_reloc (filedata, reloc_type)
-		   || is_6bit_inplace_sub_reloc (filedata, reloc_type))
+		   || is_6bit_inplace_sub_reloc (filedata, reloc_type)
+		   || is_6bit_inplace_add_reloc (filedata, reloc_type))
 	    {
 	      if (reloc_subtract)
 		addend -= sym->st_value;
@@ -15267,15 +15355,30 @@ get_section_contents (Elf_Internal_Shdr * section, Filedata * filedata)
 /* Uncompresses a section that was compressed using zlib/zstd, in place.  */
 
 static bool
-uncompress_section_contents (bool is_zstd, unsigned char **buffer,
-			     uint64_t uncompressed_size, uint64_t *size)
+uncompress_section_contents (bool              is_zstd,
+			     unsigned char **  buffer,
+			     uint64_t          uncompressed_size,
+			     uint64_t *        size,
+			     uint64_t          file_size)
 {
   uint64_t compressed_size = *size;
   unsigned char *compressed_buffer = *buffer;
-  unsigned char *uncompressed_buffer = xmalloc (uncompressed_size);
+  unsigned char *uncompressed_buffer = NULL;
   z_stream strm;
   int rc;
 
+  /* Similar to _bfd_section_size_insane() in the BFD library we expect an
+     upper limit of ~10x compression.  Any compression larger than that is
+     thought to be due to fuzzing of the compression header.  */
+  if (uncompressed_size > file_size * 10)
+    {
+      error (_("Uncompressed section size is suspiciously large: 0x%" PRIu64 "\n"),
+	       uncompressed_size);
+      goto fail;
+    }
+
+  uncompressed_buffer = xmalloc (uncompressed_size);
+  
   if (is_zstd)
     {
 #ifdef HAVE_ZSTD
@@ -15405,7 +15508,7 @@ dump_section_as_strings (Elf_Internal_Shdr * section, Filedata * filedata)
       if (uncompressed_size)
 	{
 	  if (uncompress_section_contents (is_zstd, &start, uncompressed_size,
-					   &new_size))
+					   &new_size, filedata->file_size))
 	    num_bytes = new_size;
 	  else
 	    {
@@ -15628,7 +15731,7 @@ dump_section_as_bytes (Elf_Internal_Shdr *section,
       if (uncompressed_size)
 	{
 	  if (uncompress_section_contents (is_zstd, &start, uncompressed_size,
-					   &new_size))
+					   &new_size, filedata->file_size))
 	    {
 	      section_size = new_size;
 	    }
@@ -16060,7 +16163,7 @@ load_specific_debug_section (enum dwarf_section_display_enum  debug,
       if (uncompressed_size)
 	{
 	  if (uncompress_section_contents (is_zstd, &start, uncompressed_size,
-					   &size))
+					   &size, filedata->file_size))
 	    {
 	      /* Free the compressed buffer, update the section buffer
 		 and the section size if uncompress is successful.  */
@@ -19547,6 +19650,10 @@ get_note_type (Filedata * filedata, unsigned e_type)
 	return _("NT_ARM_PACG_KEYS (ARM pointer authentication generic keys)");
       case NT_ARM_TAGGED_ADDR_CTRL:
 	return _("NT_ARM_TAGGED_ADDR_CTRL (AArch tagged address control)");
+      case NT_ARM_SSVE:
+	return _("NT_ARM_SSVE (AArch64 streaming SVE registers)");
+      case NT_ARM_ZA:
+	return _("NT_ARM_ZA (AArch64 SME ZA register)");
       case NT_ARM_PAC_ENABLED_KEYS:
 	return _("NT_ARM_PAC_ENABLED_KEYS (AArch64 pointer authentication enabled keys)");
       case NT_ARC_V2:
@@ -20719,6 +20826,38 @@ get_openbsd_elfcore_note_type (Filedata * filedata, unsigned e_type)
 }
 
 static const char *
+get_qnx_elfcore_note_type (Filedata * filedata, unsigned e_type)
+{
+  switch (e_type)
+    {
+    case QNT_DEBUG_FULLPATH:
+      return _("QNX debug fullpath");
+    case QNT_DEBUG_RELOC:
+      return _("QNX debug relocation");
+    case QNT_STACK:
+      return _("QNX stack");
+    case QNT_GENERATOR:
+      return _("QNX generator");
+    case QNT_DEFAULT_LIB:
+      return _("QNX default library");
+    case QNT_CORE_SYSINFO:
+      return _("QNX core sysinfo");
+    case QNT_CORE_INFO:
+      return _("QNX core info");
+    case QNT_CORE_STATUS:
+      return _("QNX core status");
+    case QNT_CORE_GREG:
+      return _("QNX general registers");
+    case QNT_CORE_FPREG:
+      return _("QNX floating point registers");
+    case QNT_LINK_MAP:
+      return _("QNX link map");
+    }
+
+  return get_note_type (filedata, e_type);
+}
+
+static const char *
 get_stapsdt_note_type (unsigned e_type)
 {
   static char buff[64];
@@ -21642,6 +21781,35 @@ print_amdgpu_note (Elf_Internal_Note *pnote)
 #endif
 }
 
+static bool
+print_qnx_note (Elf_Internal_Note *pnote)
+{
+  switch (pnote->type)
+    {
+    case QNT_STACK:
+      if (pnote->descsz != 12)
+	goto desc_size_fail;
+
+      printf (_("   Stack Size: 0x%" PRIx32 "\n"),
+	      (unsigned) byte_get ((unsigned char *) pnote->descdata, 4));
+      printf (_("   Stack allocated: %" PRIx32 "\n"),
+	      (unsigned) byte_get ((unsigned char *) pnote->descdata + 4, 4));
+      printf (_("   Executable: %s\n"),
+	      ((unsigned) byte_get ((unsigned char *) pnote->descdata + 8, 1)) ? "no": "yes");
+      break;
+
+    default:
+      print_note_contents_hex(pnote);
+    }
+  return true;
+
+desc_size_fail:
+  printf (_("  <corrupt - data size is too small>\n"));
+  error (_("corrupt QNX note: data size is too small\n"));
+  return false;
+}
+
+
 /* Note that by the ELF standard, the name field is already null byte
    terminated, and namesz includes the terminating null byte.
    I.E. the value of namesz for the name "FSF" is 4.
@@ -21687,6 +21855,10 @@ process_note (Elf_Internal_Note *  pnote,
   else if (startswith (pnote->namedata, "OpenBSD"))
     /* OpenBSD-specific core file notes.  */
     nt = get_openbsd_elfcore_note_type (filedata, pnote->type);
+
+  else if (startswith (pnote->namedata, "QNX"))
+    /* QNX-specific core file notes.  */
+    nt = get_qnx_elfcore_note_type (filedata, pnote->type);
 
   else if (startswith (pnote->namedata, "SPU/"))
     {
@@ -21742,6 +21914,8 @@ process_note (Elf_Internal_Note *  pnote,
   else if (startswith (pnote->namedata, "AMDGPU")
 	   && pnote->type == NT_AMDGPU_METADATA)
     return print_amdgpu_note (pnote);
+  else if (startswith (pnote->namedata, "QNX"))
+    return print_qnx_note (pnote);
 
   print_note_contents_hex (pnote);
   return true;

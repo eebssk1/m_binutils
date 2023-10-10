@@ -3571,6 +3571,12 @@ elf_link_is_defined_archive_symbol (bfd * abfd, carsym * symdef)
   if (! bfd_check_format (abfd, bfd_object))
     return false;
 
+  if (elf_use_dt_symtab_p (abfd))
+    {
+      bfd_set_error (bfd_error_wrong_format);
+      return false;
+    }
+
   /* Select the appropriate symbol table.  If we don't know if the
      object file is an IR object, give linker LTO plugin a chance to
      get the correct symbol table.  */
@@ -4233,6 +4239,12 @@ elf_link_add_object_symbols (bfd *abfd, struct bfd_link_info *info)
   htab = elf_hash_table (info);
   bed = get_elf_backend_data (abfd);
 
+  if (elf_use_dt_symtab_p (abfd))
+    {
+      bfd_set_error (bfd_error_wrong_format);
+      return false;
+    }
+
   if ((abfd->flags & DYNAMIC) == 0)
     dynamic = false;
   else
@@ -4386,7 +4398,7 @@ elf_link_add_object_symbols (bfd *abfd, struct bfd_link_info *info)
 		       | DYN_NO_NEEDED)) == 0;
 
       s = bfd_get_section_by_name (abfd, ".dynamic");
-      if (s != NULL && s->size != 0)
+      if (s != NULL && s->size != 0 && (s->flags & SEC_HAS_CONTENTS) != 0)
 	{
 	  bfd_byte *dynbuf;
 	  bfd_byte *extdyn;
@@ -5302,10 +5314,14 @@ elf_link_add_object_symbols (bfd *abfd, struct bfd_link_info *info)
 		  else
 		    _bfd_error_handler
 		      /* xgettext:c-format */
-		      (_("warning: alignment %u of symbol `%s' in %pB"
-			 " is smaller than %u in %pB"),
+		      (_("warning: alignment %u of normal symbol `%s' in %pB"
+			 " is smaller than %u used by the common definition in %pB"),
 		       1 << normal_align, name, normal_bfd,
 		       1 << common_align, common_bfd);
+
+		  /* PR 30499: make sure that users understand that this warning is serious.  */
+		  _bfd_error_handler
+		    (_("warning: NOTE: alignment discrepancies can cause real problems.  Investigation is advised."));
 		}
 	    }
 
@@ -5317,12 +5333,18 @@ elf_link_add_object_symbols (bfd *abfd, struct bfd_link_info *info)
 	      if (h->size != 0
 		  && h->size != isym->st_size
 		  && ! size_change_ok)
-		_bfd_error_handler
-		  /* xgettext:c-format */
-		  (_("warning: size of symbol `%s' changed"
-		     " from %" PRIu64 " in %pB to %" PRIu64 " in %pB"),
-		   name, (uint64_t) h->size, old_bfd,
-		   (uint64_t) isym->st_size, abfd);
+		{
+		  _bfd_error_handler
+		    /* xgettext:c-format */
+		    (_("warning: size of symbol `%s' changed"
+		       " from %" PRIu64 " in %pB to %" PRIu64 " in %pB"),
+		     name, (uint64_t) h->size, old_bfd,
+		     (uint64_t) isym->st_size, abfd);
+
+		  /* PR 30499: make sure that users understand that this warning is serious.  */
+		  _bfd_error_handler
+		    (_("warning: NOTE: size discrepancies can cause real problems.  Investigation is advised."));
+		}
 
 	      h->size = isym->st_size;
 	    }
@@ -5382,7 +5404,14 @@ elf_link_add_object_symbols (bfd *abfd, struct bfd_link_info *info)
 	      h->unique_global = (flags & BSF_GNU_UNIQUE) != 0;
 	    }
 
-	  if (definition && !dynamic)
+	  /* Don't add indirect symbols for .symver x, x@FOO aliases
+	     in IR.  Since all data or text symbols in IR have the
+	     same type, value and section, we can't tell if a symbol
+	     is an alias of another symbol by their types, values and
+	     sections.  */
+	  if (definition
+	      && !dynamic
+	      && (abfd->flags & BFD_PLUGIN) == 0)
 	    {
 	      char *p = strchr (name, ELF_VER_CHR);
 	      if (p != NULL && p[1] != ELF_VER_CHR)
@@ -8204,7 +8233,7 @@ bfd_elf_get_bfd_needed_list (bfd *abfd,
     return true;
 
   s = bfd_get_section_by_name (abfd, ".dynamic");
-  if (s == NULL || s->size == 0)
+  if (s == NULL || s->size == 0 || (s->flags & SEC_HAS_CONTENTS) == 0)
     return true;
 
   if (!bfd_malloc_and_get_section (abfd, s, &dynbuf))
@@ -11361,6 +11390,13 @@ elf_link_input_bfd (struct elf_final_link_info *flinfo, bfd *input_bfd)
 	      contents = flinfo->contents;
 	    }
 	}
+      else if (!(o->flags & SEC_RELOC)
+	       && !bed->elf_backend_write_section
+	       && o->sec_info_type == SEC_INFO_TYPE_MERGE)
+	/* A MERGE section that has no relocations doesn't need the
+	   contents anymore, they have been recorded earlier.  Except
+	   if the backend has special provisions for writing sections.  */
+	contents = NULL;
       else
 	{
 	  contents = flinfo->contents;

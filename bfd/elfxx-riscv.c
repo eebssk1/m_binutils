@@ -38,6 +38,8 @@
    relocations for the debug info.  */
 static bfd_reloc_status_type riscv_elf_add_sub_reloc
   (bfd *, arelent *, asymbol *, void *, asection *, bfd *, char **);
+static bfd_reloc_status_type riscv_elf_ignore_reloc
+  (bfd *, arelent *, asymbol *, void *, asection *, bfd *, char **);
 
 /* The relocation table used for SHT_RELA sections.  */
 
@@ -844,6 +846,39 @@ static reloc_howto_type howto_table[] =
 	 0,				/* src_mask */
 	 0xffffffff,			/* dst_mask */
 	 false),			/* pcrel_offset */
+
+  /* Reserved for R_RISCV_PLT32.  */
+  EMPTY_HOWTO (59),
+
+  /* N-bit in-place setting, for unsigned-leb128 local label subtraction.  */
+  HOWTO (R_RISCV_SET_ULEB128,		/* type */
+	 0,				/* rightshift */
+	 0,				/* size */
+	 0,				/* bitsize */
+	 false,				/* pc_relative */
+	 0,				/* bitpos */
+	 complain_overflow_dont,	/* complain_on_overflow */
+	 riscv_elf_ignore_reloc,	/* special_function */
+	 "R_RISCV_SET_ULEB128",		/* name */
+	 false,				/* partial_inplace */
+	 0,				/* src_mask */
+	 0,				/* dst_mask */
+	 false),			/* pcrel_offset */
+
+  /* N-bit in-place addition, for unsigned-leb128 local label subtraction.  */
+  HOWTO (R_RISCV_SUB_ULEB128,		/* type */
+	 0,				/* rightshift */
+	 0,				/* size */
+	 0,				/* bitsize */
+	 false,				/* pc_relative */
+	 0,				/* bitpos */
+	 complain_overflow_dont,	/* complain_on_overflow */
+	 riscv_elf_ignore_reloc,	/* special_function */
+	 "R_RISCV_SUB_ULEB128",		/* name */
+	 false,				/* partial_inplace */
+	 0,				/* src_mask */
+	 0,				/* dst_mask */
+	 false),			/* pcrel_offset */
 };
 
 /* A mapping from BFD reloc types to RISC-V ELF reloc types.  */
@@ -905,6 +940,8 @@ static const struct elf_reloc_map riscv_reloc_map[] =
   { BFD_RELOC_RISCV_SET16, R_RISCV_SET16 },
   { BFD_RELOC_RISCV_SET32, R_RISCV_SET32 },
   { BFD_RELOC_RISCV_32_PCREL, R_RISCV_32_PCREL },
+  { BFD_RELOC_RISCV_SET_ULEB128, R_RISCV_SET_ULEB128 },
+  { BFD_RELOC_RISCV_SUB_ULEB128, R_RISCV_SUB_ULEB128 },
 };
 
 /* Given a BFD reloc type, return a howto structure.  */
@@ -1010,6 +1047,23 @@ riscv_elf_add_sub_reloc (bfd *abfd,
   return bfd_reloc_ok;
 }
 
+/* Special handler for relocations which don't have to be relocated.
+   This function just simply return bfd_reloc_ok.  */
+
+static bfd_reloc_status_type
+riscv_elf_ignore_reloc (bfd *abfd ATTRIBUTE_UNUSED,
+			arelent *reloc_entry,
+			asymbol *symbol ATTRIBUTE_UNUSED,
+			void *data ATTRIBUTE_UNUSED,
+			asection *input_section,
+			bfd *output_bfd,
+			char **error_message ATTRIBUTE_UNUSED)
+{
+  if (output_bfd != NULL)
+    reloc_entry->address += input_section->output_offset;
+  return bfd_reloc_ok;
+}
+
 /* Always add the IMPLICIT for the SUBSET.  */
 
 static bool
@@ -1078,6 +1132,7 @@ static struct riscv_implicit_subset riscv_implicit_subsets[] =
   {"zvl256b", "zvl128b",	check_implicit_always},
   {"zvl128b", "zvl64b",		check_implicit_always},
   {"zvl64b", "zvl32b",		check_implicit_always},
+  {"zfa", "f",		check_implicit_always},
   {"d", "f",		check_implicit_always},
   {"zfh", "zfhmin",	check_implicit_always},
   {"zfhmin", "f",	check_implicit_always},
@@ -1101,6 +1156,23 @@ static struct riscv_implicit_subset riscv_implicit_subsets[] =
   {"zks", "zbkx",	check_implicit_always},
   {"zks", "zksed",	check_implicit_always},
   {"zks", "zksh",	check_implicit_always},
+  {"zvkn", "zvkned",	check_implicit_always},
+  {"zvkn", "zvknha",	check_implicit_always},
+  {"zvkn", "zvknhb",	check_implicit_always},
+  {"zvkn", "zvbb",	check_implicit_always},
+  {"zvkn", "zvkt",	check_implicit_always},
+  {"zvkng", "zvkn",	check_implicit_always},
+  {"zvkng", "zvkg",	check_implicit_always},
+  {"zvknc", "zvkn",	check_implicit_always},
+  {"zvknc", "zvbc",	check_implicit_always},
+  {"zvks", "zvksed",	check_implicit_always},
+  {"zvks", "zvksh",	check_implicit_always},
+  {"zvks", "zvbb",	check_implicit_always},
+  {"zvks", "zvkt",	check_implicit_always},
+  {"zvksg", "zvks",	check_implicit_always},
+  {"zvksg", "zvkg",	check_implicit_always},
+  {"zvksc", "zvks",	check_implicit_always},
+  {"zvksc", "zvbc",	check_implicit_always},
   {"smaia", "ssaia",		check_implicit_always},
   {"smstateen", "ssstateen",	check_implicit_always},
   {"smepmp", "zicsr",		check_implicit_always},
@@ -1168,6 +1240,7 @@ static struct riscv_supported_ext riscv_supported_std_z_ext[] =
   {"zicbom",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zicbop",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zicboz",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zicond",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zicsr",		ISA_SPEC_CLASS_20191213,	2, 0,  0 },
   {"zicsr",		ISA_SPEC_CLASS_20190608,	2, 0,  0 },
   {"zifencei",		ISA_SPEC_CLASS_20191213,	2, 0,  0 },
@@ -1175,6 +1248,7 @@ static struct riscv_supported_ext riscv_supported_std_z_ext[] =
   {"zihintpause",	ISA_SPEC_CLASS_DRAFT,		2, 0,  0 },
   {"zmmul",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zawrs",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zfa",		ISA_SPEC_CLASS_DRAFT,		0, 1,  0 },
   {"zfh",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zfhmin",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zfinx",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
@@ -1205,6 +1279,21 @@ static struct riscv_supported_ext riscv_supported_std_z_ext[] =
   {"zve64x",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zve64f",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zve64d",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvbb",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvbc",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvkg",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvkn",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvkng",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvknc",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvkned",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvknha",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvknhb",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvksed",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvksh",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvks",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvksg",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvksc",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zvkt",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zvl32b",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zvl64b",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zvl128b",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
@@ -1255,6 +1344,8 @@ static struct riscv_supported_ext riscv_supported_vendor_x_ext[] =
   {"xtheadmemidx",	ISA_SPEC_CLASS_DRAFT,	1, 0, 0 },
   {"xtheadmempair",	ISA_SPEC_CLASS_DRAFT,	1, 0, 0 },
   {"xtheadsync",	ISA_SPEC_CLASS_DRAFT,	1, 0, 0 },
+  /* XVentanaCondOps: https://github.com/ventanamicro/ventana-custom-extensions/releases/download/v1.0.0/ventana-custom-extensions-v1.0.0.pdf */
+  {"xventanacondops",	ISA_SPEC_CLASS_DRAFT,	1, 0, 0 },
   {NULL, 0, 0, 0, 0}
 };
 
@@ -1801,14 +1892,29 @@ static void
 riscv_parse_add_implicit_subsets (riscv_parse_subset_t *rps)
 {
   struct riscv_implicit_subset *t = riscv_implicit_subsets;
-  for (; t->subset_name; t++)
+  bool finished = false;
+  while (!finished)
     {
-      riscv_subset_t *subset = NULL;
-      if (riscv_lookup_subset (rps->subset_list, t->subset_name, &subset)
-	  && t->check_func (t->implicit_name, subset))
-	riscv_parse_add_subset (rps, t->implicit_name,
-				RISCV_UNKNOWN_VERSION,
-				RISCV_UNKNOWN_VERSION, true);
+      finished = true;
+      for (; t->subset_name; t++)
+	{
+	  riscv_subset_t *subset = NULL;
+	  riscv_subset_t *implicit_subset = NULL;
+	  if (riscv_lookup_subset (rps->subset_list, t->subset_name, &subset)
+	      && !riscv_lookup_subset (rps->subset_list, t->implicit_name,
+				       &implicit_subset)
+	      && t->check_func (t->implicit_name, subset))
+	    {
+	      riscv_parse_add_subset (rps, t->implicit_name,
+				      RISCV_UNKNOWN_VERSION,
+				      RISCV_UNKNOWN_VERSION, true);
+
+	      /* Restart the loop and pick up any new implications.  */
+	      finished = false;
+	      t = riscv_implicit_subsets;
+	      break;
+	    }
+	}
     }
 }
 
@@ -2258,6 +2364,8 @@ riscv_multi_subset_supports (riscv_parse_subset_t *rps,
       return riscv_subset_supports (rps, "zicbop");
     case INSN_CLASS_ZICBOZ:
       return riscv_subset_supports (rps, "zicboz");
+    case INSN_CLASS_ZICOND:
+      return riscv_subset_supports (rps, "zicond");
     case INSN_CLASS_ZICSR:
       return riscv_subset_supports (rps, "zicsr");
     case INSN_CLASS_ZIFENCEI:
@@ -2313,6 +2421,17 @@ riscv_multi_subset_supports (riscv_parse_subset_t *rps,
 	       && riscv_subset_supports (rps, "q"))
 	      || (riscv_subset_supports (rps, "zhinxmin")
 		  && riscv_subset_supports (rps, "zqinx")));
+    case INSN_CLASS_ZFA:
+      return riscv_subset_supports (rps, "zfa");
+    case INSN_CLASS_D_AND_ZFA:
+      return riscv_subset_supports (rps, "d")
+	     && riscv_subset_supports (rps, "zfa");
+    case INSN_CLASS_Q_AND_ZFA:
+      return riscv_subset_supports (rps, "q")
+	     && riscv_subset_supports (rps, "zfa");
+    case INSN_CLASS_ZFH_AND_ZFA:
+      return riscv_subset_supports (rps, "zfh")
+	     && riscv_subset_supports (rps, "zfa");
     case INSN_CLASS_ZBA:
       return riscv_subset_supports (rps, "zba");
     case INSN_CLASS_ZBB:
@@ -2355,6 +2474,25 @@ riscv_multi_subset_supports (riscv_parse_subset_t *rps,
 	      || riscv_subset_supports (rps, "zve64d")
 	      || riscv_subset_supports (rps, "zve64f")
 	      || riscv_subset_supports (rps, "zve32f"));
+    case INSN_CLASS_ZVBB:
+      return riscv_subset_supports (rps, "zvbb");
+    case INSN_CLASS_ZVBC:
+      return riscv_subset_supports (rps, "zvbc");
+    case INSN_CLASS_ZVKG:
+      return riscv_subset_supports (rps, "zvkg");
+    case INSN_CLASS_ZVKNED:
+      return riscv_subset_supports (rps, "zvkned");
+    case INSN_CLASS_ZVKNHA:
+      return riscv_subset_supports (rps, "zvknha");
+    case INSN_CLASS_ZVKNHB:
+      return riscv_subset_supports (rps, "zvknhb");
+    case INSN_CLASS_ZVKNHA_OR_ZVKNHB:
+      return (riscv_subset_supports (rps, "zvknha")
+	      || riscv_subset_supports (rps, "zvknhb"));
+    case INSN_CLASS_ZVKSED:
+      return riscv_subset_supports (rps, "zvksed");
+    case INSN_CLASS_ZVKSH:
+      return riscv_subset_supports (rps, "zvksh");
     case INSN_CLASS_SVINVAL:
       return riscv_subset_supports (rps, "svinval");
     case INSN_CLASS_H:
@@ -2383,6 +2521,8 @@ riscv_multi_subset_supports (riscv_parse_subset_t *rps,
       return riscv_subset_supports (rps, "xtheadmempair");
     case INSN_CLASS_XTHEADSYNC:
       return riscv_subset_supports (rps, "xtheadsync");
+    case INSN_CLASS_XVENTANACONDOPS:
+      return riscv_subset_supports (rps, "xventanacondops");
     default:
       rps->error_handler
         (_("internal: unreachable INSN_CLASS_*"));
@@ -2407,6 +2547,8 @@ riscv_multi_subset_supports_ext (riscv_parse_subset_t *rps,
       return "zicbop";
     case INSN_CLASS_ZICBOZ:
       return "zicboz";
+    case INSN_CLASS_ZICOND:
+      return "zicond";
     case INSN_CLASS_ZICSR:
       return "zicsr";
     case INSN_CLASS_ZIFENCEI:
@@ -2479,6 +2621,32 @@ riscv_multi_subset_supports_ext (riscv_parse_subset_t *rps,
 	return "zhinxmin";
       else
 	return _("zfhmin' and `q', or `zhinxmin' and `zqinx");
+    case INSN_CLASS_ZFA:
+      return "zfa";
+    case INSN_CLASS_D_AND_ZFA:
+      if (!riscv_subset_supports (rps, "d")
+	  && !riscv_subset_supports (rps, "zfa"))
+	return _("d' and `zfa");
+      else if (!riscv_subset_supports (rps, "d"))
+	return "d";
+      else
+	return "zfa";
+    case INSN_CLASS_Q_AND_ZFA:
+      if (!riscv_subset_supports (rps, "q")
+	  && !riscv_subset_supports (rps, "zfa"))
+	return _("q' and `zfa");
+      else if (!riscv_subset_supports (rps, "q"))
+	return "q";
+      else
+	return "zfa";
+    case INSN_CLASS_ZFH_AND_ZFA:
+      if (!riscv_subset_supports (rps, "zfh")
+	  && !riscv_subset_supports (rps, "zfa"))
+	return _("zfh' and `zfa");
+      else if (!riscv_subset_supports (rps, "zfh"))
+	return "zfh";
+      else
+	return "zfa";
     case INSN_CLASS_ZBA:
       return "zba";
     case INSN_CLASS_ZBB:
@@ -2513,6 +2681,22 @@ riscv_multi_subset_supports_ext (riscv_parse_subset_t *rps,
       return _("v' or `zve64x' or `zve32x");
     case INSN_CLASS_ZVEF:
       return _("v' or `zve64d' or `zve64f' or `zve32f");
+    case INSN_CLASS_ZVBB:
+      return _("zvbb");
+    case INSN_CLASS_ZVBC:
+      return _("zvbc");
+    case INSN_CLASS_ZVKG:
+      return _("zvkg");
+    case INSN_CLASS_ZVKNED:
+      return _("zvkned");
+    case INSN_CLASS_ZVKNHA:
+      return _("zvknha");
+    case INSN_CLASS_ZVKNHB:
+      return _("zvknhb");
+    case INSN_CLASS_ZVKSED:
+      return _("zvksed");
+    case INSN_CLASS_ZVKSH:
+      return _("zvksh");
     case INSN_CLASS_SVINVAL:
       return "svinval";
     case INSN_CLASS_H:

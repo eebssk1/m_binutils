@@ -526,6 +526,15 @@ bfd_mach_o_section_get_nbr_indirect (bfd *abfd, bfd_mach_o_section *sec)
 {
   unsigned int elsz;
 
+  /* FIXME: This array is set by the assembler but does not seem to be
+     set anywhere for objcopy.  Since bfd_mach_o_build_dysymtab will
+     not fill in output bfd_mach_o_dysymtab_command indirect_syms when
+     this array is NULL we may as well return zero for the size.
+     This is enough to stop objcopy allocating huge amounts of memory
+     for indirect symbols in fuzzed object files.  */
+  if (sec->indirect_syms == NULL)
+    return 0;
+
   elsz = bfd_mach_o_section_get_entry_size (abfd, sec);
   if (elsz == 0)
     return 0;
@@ -910,7 +919,7 @@ bfd_mach_o_canonicalize_symtab (bfd *abfd, asymbol **alocation)
     {
       _bfd_error_handler
 	(_("bfd_mach_o_canonicalize_symtab: unable to load symbols"));
-      return 0;
+      return -1;
     }
 
   BFD_ASSERT (sym->symbols != NULL);
@@ -1545,7 +1554,7 @@ bfd_mach_o_pre_canonicalize_one_reloc (bfd *abfd,
   bfd_vma addr;
 
   addr = bfd_get_32 (abfd, raw->r_address);
-  res->sym_ptr_ptr = NULL;
+  res->sym_ptr_ptr = bfd_und_section_ptr->symbol_ptr_ptr;
   res->addend = 0;
 
   if (addr & BFD_MACH_O_SR_SCATTERED)
@@ -1563,7 +1572,7 @@ bfd_mach_o_pre_canonicalize_one_reloc (bfd *abfd,
 	 end of the data for the section (e.g. in a calculation of section
 	 data length).  At present, the symbol will end up associated with
 	 the following section or, if it falls within alignment padding, as
-	 null - which will assert later.  */
+	 the undefined section symbol.  */
       for (j = 0; j < mdata->nsects; j++)
 	{
 	  bfd_mach_o_section *sect = mdata->sections[j];
@@ -1692,11 +1701,36 @@ long
 bfd_mach_o_get_dynamic_reloc_upper_bound (bfd *abfd)
 {
   bfd_mach_o_data_struct *mdata = bfd_mach_o_get_data (abfd);
+  bfd_mach_o_dysymtab_command *dysymtab = mdata->dysymtab;
 
-  if (mdata->dysymtab == NULL)
+  if (dysymtab == NULL)
     return 1;
-  return (mdata->dysymtab->nextrel + mdata->dysymtab->nlocrel + 1)
-    * sizeof (arelent *);
+
+  ufile_ptr filesize = bfd_get_file_size (abfd);
+  size_t amt;
+
+  if (filesize != 0)
+    {
+      if (dysymtab->extreloff > filesize
+	  || dysymtab->nextrel > ((filesize - dysymtab->extreloff)
+				  / BFD_MACH_O_RELENT_SIZE)
+	  || dysymtab->locreloff > filesize
+	  || dysymtab->nlocrel > ((filesize - dysymtab->locreloff)
+				  / BFD_MACH_O_RELENT_SIZE))
+	{
+	  bfd_set_error (bfd_error_file_truncated);
+	  return -1;
+	}
+    }
+  if (dysymtab->nextrel + dysymtab->nlocrel < dysymtab->nextrel
+      || _bfd_mul_overflow (dysymtab->nextrel + dysymtab->nlocrel,
+			    sizeof (arelent), &amt))
+    {
+      bfd_set_error (bfd_error_file_too_big);
+      return -1;
+    }
+
+  return (dysymtab->nextrel + dysymtab->nlocrel + 1) * sizeof (arelent *);
 }
 
 long
@@ -1720,29 +1754,7 @@ bfd_mach_o_canonicalize_dynamic_reloc (bfd *abfd, arelent **rels,
 
   if (mdata->dyn_reloc_cache == NULL)
     {
-      ufile_ptr filesize = bfd_get_file_size (abfd);
-      size_t amt;
-
-      if (filesize != 0)
-	{
-	  if (dysymtab->extreloff > filesize
-	      || dysymtab->nextrel > ((filesize - dysymtab->extreloff)
-				      / BFD_MACH_O_RELENT_SIZE)
-	      || dysymtab->locreloff > filesize
-	      || dysymtab->nlocrel > ((filesize - dysymtab->locreloff)
-				      / BFD_MACH_O_RELENT_SIZE))
-	    {
-	      bfd_set_error (bfd_error_file_truncated);
-	      return -1;
-	    }
-	}
-      if (_bfd_mul_overflow (dysymtab->nextrel + dysymtab->nlocrel,
-			     sizeof (arelent), &amt))
-	{
-	  bfd_set_error (bfd_error_file_too_big);
-	  return -1;
-	}
-
+      size_t amt = (dysymtab->nextrel + dysymtab->nlocrel) * sizeof (arelent);
       res = bfd_malloc (amt);
       if (res == NULL)
 	return -1;
@@ -2060,6 +2072,8 @@ bfd_mach_o_write_symtab_content (bfd *abfd, bfd_mach_o_symtab_command *sym)
 
   if (!_bfd_stringtab_emit (abfd, strtab))
     goto err;
+
+  _bfd_stringtab_free (strtab);
 
   /* Pad string table.  */
   padlen = bfd_mach_o_pad4 (abfd, sym->strsize);
@@ -6187,8 +6201,6 @@ bfd_mach_o_close_and_cleanup (bfd *abfd)
   bfd_mach_o_data_struct *mdata = bfd_mach_o_get_data (abfd);
   if (bfd_get_format (abfd) == bfd_object && mdata != NULL)
     {
-      _bfd_dwarf2_cleanup_debug_info (abfd, &mdata->dwarf2_find_line_info);
-      bfd_mach_o_free_cached_info (abfd);
       if (mdata->dsym_bfd != NULL)
 	{
 	  bfd *fat_bfd = mdata->dsym_bfd->my_archive;
@@ -6219,18 +6231,27 @@ bfd_mach_o_close_and_cleanup (bfd *abfd)
 }
 
 bool
-bfd_mach_o_free_cached_info (bfd *abfd)
+bfd_mach_o_bfd_free_cached_info (bfd *abfd)
 {
-  bfd_mach_o_data_struct *mdata = bfd_mach_o_get_data (abfd);
-  asection *asect;
-  free (mdata->dyn_reloc_cache);
-  mdata->dyn_reloc_cache = NULL;
-  for (asect = abfd->sections; asect != NULL; asect = asect->next)
+  bfd_mach_o_data_struct *mdata;
+
+  if ((bfd_get_format (abfd) == bfd_object
+       || bfd_get_format (abfd) == bfd_core)
+      && (mdata = bfd_mach_o_get_data (abfd)) != NULL)
     {
-      free (asect->relocation);
-      asect->relocation = NULL;
+      _bfd_dwarf2_cleanup_debug_info (abfd, &mdata->dwarf2_find_line_info);
+      free (mdata->dyn_reloc_cache);
+      mdata->dyn_reloc_cache = NULL;
+
+      for (asection *asect = abfd->sections; asect; asect = asect->next)
+	{
+	  free (asect->relocation);
+	  asect->relocation = NULL;
+	}
     }
 
+  /* Do not call _bfd_generic_bfd_free_cached_info here.
+     bfd_mach_o_close_and_cleanup uses tdata.  */
   return true;
 }
 

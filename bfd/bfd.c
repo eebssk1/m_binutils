@@ -34,7 +34,16 @@ SECTION
 	contains the major data about the file and pointers
 	to the rest of the data.
 
-CODE_FRAGMENT
+EXTERNAL
+.typedef enum bfd_format
+.  {
+.    bfd_unknown = 0,	{* File format is unknown.  *}
+.    bfd_object,	{* Linker/assembler/compiler output.  *}
+.    bfd_archive,	{* Object archive file.  *}
+.    bfd_core,		{* Core dump.  *}
+.    bfd_type_end	{* Marks the end; don't use it!  *}
+.  }
+.bfd_format;
 .
 .enum bfd_direction
 .  {
@@ -57,6 +66,8 @@ CODE_FRAGMENT
 .    bfd_byte data[1];
 .  };
 .
+
+CODE_FRAGMENT
 .struct bfd
 .{
 .  {* The filename the application opened the BFD with.  *}
@@ -181,17 +192,15 @@ CODE_FRAGMENT
 .  {* Compress sections in this BFD with SHF_COMPRESSED zstd.  *}
 .#define BFD_COMPRESS_ZSTD      0x400000
 .
-.  {* Flags bits to be saved in bfd_preserve_save.  *}
-.#define BFD_FLAGS_SAVED \
-.  (BFD_IN_MEMORY | BFD_COMPRESS | BFD_DECOMPRESS | BFD_LINKER_CREATED \
-.   | BFD_PLUGIN | BFD_COMPRESS_GABI | BFD_CONVERT_ELF_COMMON \
-.   | BFD_USE_ELF_STT_COMMON | BFD_COMPRESS_ZSTD)
+.  {* Don't generate ELF section header.  *}
+.#define BFD_NO_SECTION_HEADER	0x800000
 .
 .  {* Flags bits which are for BFD use only.  *}
 .#define BFD_FLAGS_FOR_BFD_USE_MASK \
 .  (BFD_IN_MEMORY | BFD_COMPRESS | BFD_DECOMPRESS | BFD_LINKER_CREATED \
 .   | BFD_PLUGIN | BFD_TRADITIONAL_FORMAT | BFD_DETERMINISTIC_OUTPUT \
-.   | BFD_COMPRESS_GABI | BFD_CONVERT_ELF_COMMON | BFD_USE_ELF_STT_COMMON)
+.   | BFD_COMPRESS_GABI | BFD_CONVERT_ELF_COMMON | BFD_USE_ELF_STT_COMMON \
+.   | BFD_NO_SECTION_HEADER)
 .
 .  {* The format which belongs to the BFD. (object, core, etc.)  *}
 .  ENUM_BITFIELD (bfd_format) format : 3;
@@ -346,8 +355,6 @@ CODE_FRAGMENT
 .      struct tekhex_data_struct *tekhex_data;
 .      struct elf_obj_tdata *elf_obj_data;
 .      struct mmo_data_struct *mmo_data;
-.      struct sun_core_struct *sun_core_data;
-.      struct sco5_core_struct *sco5_core_data;
 .      struct trad_core_struct *trad_core_data;
 .      struct som_data_struct *som_data;
 .      struct hpux_core_struct *hpux_core_data;
@@ -356,7 +363,6 @@ CODE_FRAGMENT
 .      struct lynx_core_struct *lynx_core_data;
 .      struct osf_core_struct *osf_core_data;
 .      struct cisco_core_struct *cisco_core_data;
-.      struct versados_data_struct *versados_data;
 .      struct netbsd_core_struct *netbsd_core_data;
 .      struct mach_o_data_struct *mach_o_data;
 .      struct mach_o_fat_data_struct *mach_o_fat_data;
@@ -380,6 +386,8 @@ CODE_FRAGMENT
 .  const struct bfd_build_id *build_id;
 .};
 .
+
+EXTERNAL
 .static inline const char *
 .bfd_get_filename (const bfd *abfd)
 .{
@@ -646,7 +654,7 @@ CODE_FRAGMENT
 
 /*
 INODE
-Error reporting, Miscellaneous, typedef bfd, BFD front end
+Error reporting, Initialization, typedef bfd, BFD front end
 
 SECTION
 	Error reporting
@@ -668,7 +676,6 @@ SUBSECTION
 	enumerated type <<bfd_error_type>>.
 
 CODE_FRAGMENT
-.
 .typedef enum bfd_error
 .{
 .  bfd_error_no_error = 0,
@@ -697,11 +704,16 @@ CODE_FRAGMENT
 .}
 .bfd_error_type;
 .
+INTERNAL
+.{* A buffer that is freed on bfd_close.  *}
+.extern char *_bfd_error_buf;
+.
 */
 
-static bfd_error_type bfd_error = bfd_error_no_error;
-static bfd *input_bfd = NULL;
-static bfd_error_type input_error = bfd_error_no_error;
+static bfd_error_type bfd_error;
+static bfd_error_type input_error;
+static bfd *input_bfd;
+char *_bfd_error_buf;
 
 const char *const bfd_errmsgs[] =
 {
@@ -789,6 +801,8 @@ bfd_set_input_error (bfd *input, bfd_error_type error_tag)
   /* This is an error that occurred during bfd_close when writing an
      archive, but on one of the input files.  */
   bfd_error = bfd_error_on_input;
+  free (_bfd_error_buf);
+  _bfd_error_buf = NULL;
   input_bfd = input;
   input_error = error_tag;
   if (input_error >= bfd_error_on_input)
@@ -815,12 +829,11 @@ bfd_errmsg (bfd_error_type error_tag)
 #endif
   if (error_tag == bfd_error_on_input)
     {
-      char *buf;
       const char *msg = bfd_errmsg (input_error);
-
-      if (asprintf (&buf, _(bfd_errmsgs [error_tag]),
-		    bfd_get_filename (input_bfd), msg) != -1)
-	return buf;
+      char *ret = bfd_asprintf (_(bfd_errmsgs[error_tag]),
+				bfd_get_filename (input_bfd), msg);
+      if (ret)
+	return ret;
 
       /* Ick, what to do on out of memory?  */
       return msg;
@@ -832,7 +845,7 @@ bfd_errmsg (bfd_error_type error_tag)
   if (error_tag > bfd_error_invalid_error_code)
     error_tag = bfd_error_invalid_error_code;	/* sanity check */
 
-  return _(bfd_errmsgs [error_tag]);
+  return _(bfd_errmsgs[error_tag]);
 }
 
 /*
@@ -862,6 +875,40 @@ bfd_perror (const char *message)
 }
 
 /*
+INTERNAL_FUNCTION
+	bfd_asprintf
+
+SYNOPSIS
+	char *bfd_asprintf (const char *fmt, ...);
+
+DESCRIPTION
+	Primarily for error reporting, this function is like
+	libiberty's xasprintf except that it can return NULL on no
+	memory and the returned string should not be freed.  Uses a
+	single malloc'd buffer managed by libbfd, _bfd_error_buf.
+	Be aware that a call to this function frees the result of any
+	previous call.  bfd_errmsg (bfd_error_on_input) also calls
+	this function.
+*/
+
+char *
+bfd_asprintf (const char *fmt, ...)
+{
+  free (_bfd_error_buf);
+  _bfd_error_buf = NULL;
+  va_list ap;
+  va_start (ap, fmt);
+  int count = vasprintf (&_bfd_error_buf, fmt, ap);
+  va_end (ap);
+  if (count == -1)
+    {
+      bfd_set_error (bfd_error_no_memory);
+      _bfd_error_buf = NULL;
+    }
+  return _bfd_error_buf;
+}
+
+/*
 SUBSECTION
 	BFD error handler
 
@@ -872,7 +919,6 @@ SUBSECTION
 	The BFD error handler acts like vprintf.
 
 CODE_FRAGMENT
-.
 .typedef void (*bfd_error_handler_type) (const char *, va_list);
 .
 */
@@ -1580,7 +1626,6 @@ SUBSECTION
 	_bfd_error_handler and continues.
 
 CODE_FRAGMENT
-.
 .typedef void (*bfd_assert_handler_type) (const char *bfd_formatmsg,
 .					  const char *bfd_version,
 .					  const char *bfd_file,
@@ -1631,10 +1676,46 @@ bfd_set_assert_handler (bfd_assert_handler_type pnew)
   _bfd_assert_handler = pnew;
   return pold;
 }
+
+/*
+INODE
+Initialization, Miscellaneous, Error reporting, BFD front end
+
+FUNCTION
+	bfd_init
+
+SYNOPSIS
+	unsigned int bfd_init (void);
+
+DESCRIPTION
+	This routine must be called before any other BFD function to
+	initialize magical internal data structures.
+	Returns a magic number, which may be used to check
+	that the bfd library is configured as expected by users.
+
+.{* Value returned by bfd_init.  *}
+.#define BFD_INIT_MAGIC (sizeof (struct bfd_section))
+.
+*/
+
+unsigned int
+bfd_init (void)
+{
+  bfd_error = bfd_error_no_error;
+  input_bfd = NULL;
+  free (_bfd_error_buf);
+  _bfd_error_buf = NULL;
+  input_error = bfd_error_no_error;
+  _bfd_error_program_name = NULL;
+  _bfd_error_internal = error_handler_fprintf;
+  _bfd_assert_handler = _bfd_default_assert_handler;
+
+  return BFD_INIT_MAGIC;
+}
 
 /*
 INODE
-Miscellaneous, Memory Usage, Error reporting, BFD front end
+Miscellaneous, Memory Usage, Initialization, BFD front end
 
 SECTION
 	Miscellaneous
@@ -1810,7 +1891,6 @@ DESCRIPTION
 	header.  Use bfd_arch_bits_per_address for number of bits in
 	the architecture address.
 
-RETURNS
 	Returns the arch size in bits if known, <<-1>> otherwise.
 */
 
@@ -1838,7 +1918,6 @@ DESCRIPTION
 	return an address sign extended to fill a bfd_vma when this is
 	the case.
 
-RETURNS
 	Returns <<1>> if the target architecture is known to sign
 	extend addresses, <<0>> if the target architecture is known to
 	not sign extend addresses, and <<-1>> otherwise.
@@ -1890,7 +1969,6 @@ SYNOPSIS
 DESCRIPTION
 	Make @var{vma} the entry point of output BFD @var{abfd}.
 
-RETURNS
 	Returns <<TRUE>> on success, <<FALSE>> otherwise.
 */
 
@@ -2267,11 +2345,21 @@ DESCRIPTION
 .#define bfd_canonicalize_dynamic_reloc(abfd, arels, asyms) \
 .	BFD_SEND (abfd, _bfd_canonicalize_dynamic_reloc, (abfd, arels, asyms))
 .
-.extern bfd_byte *bfd_get_relocated_section_contents
-.  (bfd *, struct bfd_link_info *, struct bfd_link_order *, bfd_byte *,
-.   bool, asymbol **);
-.
+*/
 
+/*
+FUNCTION
+	bfd_get_relocated_section_contents
+
+SYNOPSIS
+	bfd_byte *bfd_get_relocated_section_contents
+	  (bfd *, struct bfd_link_info *, struct bfd_link_order *, bfd_byte *,
+	   bool, asymbol **);
+
+DESCRIPTION
+	Read and relocate the indirect link_order section, into DATA
+	(if non-NULL) or to a malloc'd buffer.  Return the buffer, or
+	NULL on errors.
 */
 
 bfd_byte *
@@ -2300,7 +2388,18 @@ bfd_get_relocated_section_contents (bfd *abfd,
   return (*fn) (abfd, link_info, link_order, data, relocatable, symbols);
 }
 
-/* Record information about an ELF program header.  */
+/*
+FUNCTION
+	bfd_record_phdr
+
+SYNOPSIS
+	bool bfd_record_phdr
+	  (bfd *, unsigned long, bool, flagword, bool, bfd_vma,
+	   bool, bool, unsigned int, struct bfd_section **);
+
+DESCRIPTION
+	Record information about an ELF program header.
+*/
 
 bool
 bfd_record_phdr (bfd *abfd,
@@ -2362,8 +2461,23 @@ is32bit (bfd *abfd)
 }
 #endif
 
-/* bfd_sprintf_vma and bfd_fprintf_vma display an address in the
-   target's address size.  */
+/*
+FUNCTION
+	bfd_sprintf_vma
+	bfd_fprintf_vma
+
+SYNOPSIS
+	void bfd_sprintf_vma (bfd *, char *, bfd_vma);
+	void bfd_fprintf_vma (bfd *, void *, bfd_vma);
+
+DESCRIPTION
+	bfd_sprintf_vma and bfd_fprintf_vma display an address in the
+	target's address size.
+
+EXTERNAL
+.#define bfd_printf_vma(abfd,x) bfd_fprintf_vma (abfd, stdout, x)
+.
+*/
 
 void
 bfd_sprintf_vma (bfd *abfd ATTRIBUTE_UNUSED, char *buf, bfd_vma value)
@@ -2454,9 +2568,6 @@ SYNOPSIS
 DESCRIPTION
 	Returns the maximum page size, in bytes, as determined by
 	emulation.
-
-RETURNS
-	Returns the maximum page size in bytes for ELF, 0 otherwise.
 */
 
 bfd_vma
@@ -2482,9 +2593,6 @@ SYNOPSIS
 DESCRIPTION
 	Returns the common page size, in bytes, as determined by
 	emulation.
-
-RETURNS
-	Returns the common page size in bytes for ELF, 0 otherwise.
 */
 
 bfd_vma

@@ -341,7 +341,6 @@ TARG_ENV_HFILES = \
 	config/te-pc532mach.h \
 	config/te-pe.h \
 	config/te-solaris.h \
-	config/te-svr4.h \
 	config/te-tmips.h \
 	config/te-vxworks.h \
 	config/te-wince-pe.h
@@ -454,7 +453,7 @@ i386_tbl_deps = $(srcdir)/../opcodes/i386-opc.tbl \
 	$(srcdir)/../opcodes/i386-reg.tbl \
 	$(srcdir)/../opcodes/i386-gen.c $(srcdir)/../opcodes/i386-opc.h
 
-$(srcdir)/../opcodes/i386%init.h $(srcdir)/../opcodes/i386%tbl.h: @MAINT@ $(i386_tbl_deps)
+$(srcdir)/../opcodes/i386%init.h $(srcdir)/../opcodes/i386%tbl.h $(srcdir)/../opcodes/i386%mnem.h: @MAINT@ $(i386_tbl_deps)
 	@echo '"$@" is outdated wrt "$?"' >&2
 	@echo 'Please rebuild from the top level or in $(CURDIR)/../opcodes/' >&2
 	@false

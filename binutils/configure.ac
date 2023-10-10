@@ -348,13 +348,23 @@ do
 	fi
 	DLLTOOL_DEFS="$DLLTOOL_DEFS -DDLLTOOL_I386"
 	BUILD_DLLWRAP='$(DLLWRAP_PROG)$(EXEEXT)'
-	od_vectors="$od_vectors objdump_private_desc_xcoff"
+	od_vectors="$od_vectors objdump_private_desc_xcoff objdump_private_desc_pe"
     else
 	case $targ in
 	*-*-hms*) BUILD_SRCONV='$(SRCONV_PROG)' ;;
 	esac
 
 	case $targ in
+	aarch64-*-mingw*)
+	  BUILD_DLLTOOL='$(DLLTOOL_PROG)$(EXEEXT)'
+	  if test -z "$DLLTOOL_DEFAULT"; then
+	    DLLTOOL_DEFAULT="-DDLLTOOL_DEFAULT_AARCH64"
+	  fi
+	  DLLTOOL_DEFS="$DLLTOOL_DEFS -DDLLTOOL_AARCH64"
+	  BUILD_WINDRES='$(WINDRES_PROG)$(EXEEXT)'
+	  BUILD_WINDMC='$(WINDMC_PROG)$(EXEEXT)'
+	  BUILD_DLLWRAP='$(DLLWRAP_PROG)$(EXEEXT)'
+	  ;;
 	arm-wince-pe* | arm-*-wince | arm*-*-cegcc* | arm*-*-mingw32ce*)
   	  BUILD_DLLTOOL='$(DLLTOOL_PROG)$(EXEEXT)'
 	  if test -z "$DLLTOOL_DEFAULT"; then
@@ -431,15 +441,6 @@ changequote([,])dnl
 	spu-*-*)
 	  BUILD_MISC="${BUILD_MISC} "'bin2c$(EXEEXT_FOR_BUILD)'
 	  ;;
-	mips*-*-pe)
-  	  BUILD_DLLTOOL='$(DLLTOOL_PROG)$(EXEEXT)'
-	  if test -z "$DLLTOOL_DEFAULT"; then
-	    DLLTOOL_DEFAULT="-DDLLTOOL_DEFAULT_MIPS"
-	  fi
-	  DLLTOOL_DEFS="$DLLTOOL_DEFS -DDLLTOOL_MIPS"
-	  BUILD_WINDRES='$(WINDRES_PROG)$(EXEEXT)'
-	  BUILD_WINDMC='$(WINDMC_PROG)$(EXEEXT)'
-	  ;;
 	mcore-*-pe)
   	  BUILD_DLLTOOL='$(DLLTOOL_PROG)$(EXEEXT)'
 	  if test -z "$DLLTOOL_DEFAULT"; then
@@ -469,6 +470,9 @@ changequote([,])dnl
 	powerpc*-*-aix* | rs6000-*-aix*)
 	  od_vectors="$od_vectors objdump_private_desc_xcoff"
 	  ;;
+	*-*-pe* | *-*-cygwin* | *-*-mingw*)
+	  od_vectors="$od_vectors objdump_private_desc_pe"
+	  ;;
         *-*-darwin*)
 	  od_vectors="$od_vectors objdump_private_desc_mach_o"
 	  ;;
@@ -490,6 +494,8 @@ for i in $od_vectors ; do
 	    od_files="$od_files od-elf32_avr" ;;
 	objdump_private_desc_xcoff)
 	    od_files="$od_files od-xcoff" ;;
+	objdump_private_desc_pe)
+	    od_files="$od_files od-pe" ;;
 	objdump_private_desc_mach_o)
 	    od_files="$od_files od-macho" ;;
 	*) AC_MSG_ERROR(*** unknown private vector $i) ;;

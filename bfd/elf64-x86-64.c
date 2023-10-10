@@ -389,7 +389,8 @@ elf_x86_64_grok_psinfo (bfd *abfd, Elf_Internal_Note *note)
       default:
 	return false;
 
-      case 124:		/* sizeof(struct elf_prpsinfo) on Linux/x32 */
+      case 124:
+	/* sizeof (struct elf_external_linux_prpsinfo32_ugid16).  */
 	elf_tdata (abfd)->core->pid
 	  = bfd_get_32 (abfd, note->descdata + 12);
 	elf_tdata (abfd)->core->program
@@ -398,7 +399,18 @@ elf_x86_64_grok_psinfo (bfd *abfd, Elf_Internal_Note *note)
 	  = _bfd_elfcore_strndup (abfd, note->descdata + 44, 80);
 	break;
 
-      case 136:		/* sizeof(struct elf_prpsinfo) on Linux/x86_64 */
+    case 128:
+	/* sizeof (struct elf_external_linux_prpsinfo32_ugid32).  */
+	elf_tdata (abfd)->core->pid
+	  = bfd_get_32 (abfd, note->descdata + 12);
+	elf_tdata (abfd)->core->program
+	  = _bfd_elfcore_strndup (abfd, note->descdata + 32, 16);
+	elf_tdata (abfd)->core->command
+	  = _bfd_elfcore_strndup (abfd, note->descdata + 48, 80);
+	break;
+
+      case 136:
+	/* sizeof (struct elf_prpsinfo) on Linux/x86_64.  */
 	elf_tdata (abfd)->core->pid
 	  = bfd_get_32 (abfd, note->descdata + 24);
 	elf_tdata (abfd)->core->program
@@ -895,7 +907,7 @@ static const struct elf_x86_sframe_plt elf_x86_64_sframe_plt =
   { &elf_x86_64_sframe_pltn_fre1, &elf_x86_64_sframe_pltn_fre2 },
   NON_LAZY_PLT_ENTRY_SIZE,
   1, /* Number of FREs for PLTn for second PLT.  */
-  /* FREs for second plt ( unwind info for .plt.got is
+  /* FREs for second plt (stack trace info for .plt.got is
      identical).  Used when IBT or non-lazy PLT is in effect.  */
   { &elf_x86_64_sframe_sec_pltn_fre1 }
 };
@@ -1241,7 +1253,7 @@ elf_x86_64_check_tls_transition (bfd *abfd,
 	  if (largepic)
 	    return r_type == R_X86_64_PLTOFF64;
 	  else if (indirect_call)
-	    return r_type == R_X86_64_GOTPCRELX;
+	    return (r_type == R_X86_64_GOTPCRELX || r_type == R_X86_64_GOTPCREL);
 	  else
 	    return (r_type == R_X86_64_PC32 || r_type == R_X86_64_PLT32);
 	}
@@ -3489,6 +3501,9 @@ elf_x86_64_relocate_section (bfd *output_bfd,
 	    {
 	      bfd_vma roff = rel->r_offset;
 
+	      if (roff >= input_section->size)
+		goto corrupt_input;
+
 	      BFD_ASSERT (! unresolved_reloc);
 
 	      if (r_type == R_X86_64_TLSGD)
@@ -3529,6 +3544,8 @@ elf_x86_64_relocate_section (bfd *output_bfd,
 		  int largepic = 0;
 		  if (ABI_64_P (output_bfd))
 		    {
+		      if (roff + 5 >= input_section->size)
+			goto corrupt_input;
 		      if (contents[roff + 5] == 0xb8)
 			{
 			  if (roff < 3
@@ -3564,6 +3581,10 @@ elf_x86_64_relocate_section (bfd *output_bfd,
 			      "\x64\x8b\x04\x25\0\0\0\0\x48\x8d\x80\0\0\0",
 			      15);
 		    }
+
+		  if (roff + 8 + largepic >= input_section->size)
+		    goto corrupt_input;
+
 		  bfd_put_32 (output_bfd,
 			      elf_x86_64_tpoff (info, relocation),
 			      contents + roff + 8 + largepic);
@@ -3621,12 +3642,18 @@ elf_x86_64_relocate_section (bfd *output_bfd,
 		    }
 		  if (prefix)
 		    {
+		      if (roff + 2 >= input_section->size)
+			goto corrupt_input;
+
 		      bfd_put_8 (output_bfd, 0x0f, contents + roff);
 		      bfd_put_8 (output_bfd, 0x1f, contents + roff + 1);
 		      bfd_put_8 (output_bfd, 0x00, contents + roff + 2);
 		    }
 		  else
 		    {
+		      if (roff + 1 >= input_section->size)
+			goto corrupt_input;
+
 		      bfd_put_8 (output_bfd, 0x66, contents + roff);
 		      bfd_put_8 (output_bfd, 0x90, contents + roff + 1);
 		    }
@@ -4967,7 +4994,9 @@ elf_x86_64_get_synthetic_symtab (bfd *abfd,
   for (j = 0; plts[j].name != NULL; j++)
     {
       plt = bfd_get_section_by_name (abfd, plts[j].name);
-      if (plt == NULL || plt->size == 0)
+      if (plt == NULL
+	  || plt->size == 0
+	  || (plt->flags & SEC_HAS_CONTENTS) == 0)
 	continue;
 
       /* Get the PLT section contents.  */

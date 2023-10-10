@@ -100,6 +100,8 @@ static inline unsigned int riscv_insn_length (insn_t insn)
   (RV_X(x, 15, 5) | (-RV_X(x, 19, 1) << 5))
 #define EXTRACT_RVV_VI_UIMM(x) \
   (RV_X(x, 15, 5))
+#define EXTRACT_RVV_VI_UIMM6(x) \
+  (RV_X(x, 15, 5) | (RV_X(x, 26, 1) << 5))
 #define EXTRACT_RVV_OFFSET(x) \
   (RV_X(x, 29, 3))
 #define EXTRACT_RVV_VB_IMM(x) \
@@ -151,6 +153,8 @@ static inline unsigned int riscv_insn_length (insn_t insn)
   (RV_X(x, 0, 10) << 20)
 #define ENCODE_RVV_VC_IMM(x) \
   (RV_X(x, 0, 11) << 20)
+#define ENCODE_RVV_VI_UIMM6(x) \
+  (RV_X(x, 0, 5) << 15 | RV_X(x, 5, 1) << 26)
 
 #define VALID_ITYPE_IMM(x) (EXTRACT_ITYPE_IMM(ENCODE_ITYPE_IMM(x)) == (x))
 #define VALID_STYPE_IMM(x) (EXTRACT_STYPE_IMM(ENCODE_STYPE_IMM(x)) == (x))
@@ -375,6 +379,7 @@ enum riscv_insn_class
   INSN_CLASS_Q,
   INSN_CLASS_F_AND_C,
   INSN_CLASS_D_AND_C,
+  INSN_CLASS_ZICOND,
   INSN_CLASS_ZICSR,
   INSN_CLASS_ZIFENCEI,
   INSN_CLASS_ZIHINTPAUSE,
@@ -388,6 +393,10 @@ enum riscv_insn_class
   INSN_CLASS_ZFHMIN_INX,
   INSN_CLASS_ZFHMIN_AND_D_INX,
   INSN_CLASS_ZFHMIN_AND_Q_INX,
+  INSN_CLASS_ZFA,
+  INSN_CLASS_D_AND_ZFA,
+  INSN_CLASS_Q_AND_ZFA,
+  INSN_CLASS_ZFH_AND_ZFA,
   INSN_CLASS_ZBA,
   INSN_CLASS_ZBB,
   INSN_CLASS_ZBC,
@@ -405,6 +414,15 @@ enum riscv_insn_class
   INSN_CLASS_ZKND_OR_ZKNE,
   INSN_CLASS_V,
   INSN_CLASS_ZVEF,
+  INSN_CLASS_ZVBB,
+  INSN_CLASS_ZVBC,
+  INSN_CLASS_ZVKG,
+  INSN_CLASS_ZVKNED,
+  INSN_CLASS_ZVKNHA,
+  INSN_CLASS_ZVKNHB,
+  INSN_CLASS_ZVKNHA_OR_ZVKNHB,
+  INSN_CLASS_ZVKSED,
+  INSN_CLASS_ZVKSH,
   INSN_CLASS_SVINVAL,
   INSN_CLASS_ZICBOM,
   INSN_CLASS_ZICBOP,
@@ -422,6 +440,7 @@ enum riscv_insn_class
   INSN_CLASS_XTHEADMEMIDX,
   INSN_CLASS_XTHEADMEMPAIR,
   INSN_CLASS_XTHEADSYNC,
+  INSN_CLASS_XVENTANACONDOPS,
 };
 
 /* This structure holds information for a particular instruction.  */
@@ -501,6 +520,7 @@ enum
 {
   M_LA,
   M_LLA,
+  M_LGA,
   M_LA_TLS_GD,
   M_LA_TLS_IE,
   M_LB,
@@ -554,6 +574,8 @@ extern const char * const riscv_vsew[8];
 extern const char * const riscv_vlmul[8];
 extern const char * const riscv_vta[2];
 extern const char * const riscv_vma[2];
+extern const char * const riscv_fli_symval[32];
+extern const float riscv_fli_numval[32];
 
 extern const struct riscv_opcode riscv_opcodes[];
 extern const struct riscv_opcode riscv_insn_types[];

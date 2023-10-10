@@ -118,9 +118,13 @@ aarch64-*-linux*)	targ_emul=aarch64linux
 aarch64-*-haiku*)	targ_emul=aarch64haiku
 			targ_extra_emuls="aarch64elf aarch64elf32 aarch64elf32b aarch64elfb armelf armelfb armelf_haiku $targ_extra_libpath"
 			;;
-aarch64-*-pe*)
+aarch64-*-nto*)		targ_emul=aarch64nto
+			targ_extra_emuls="aarch64elf aarch64elf32 aarch64elf32b aarch64elfb armelf armelfb"
+			;;
+aarch64-*-pe* | aarch64-*-mingw*)
 			targ_emul=aarch64pe
-			targ_extra_ofiles="deffilep.o pep-dll-aarch64.o"
+			targ_extra_emuls="arm64pe"
+			targ_extra_ofiles="deffilep.o pep-dll-aarch64.o pe-dll.o pdb.o"
 			;;
 alpha*-*-freebsd* | alpha*-*-kfreebsd*-gnu)
 			targ_emul=elf64alpha_fbsd
@@ -374,22 +378,13 @@ i[3-7]86-*-linux-*)	targ_emul=elf_i386
 i[3-7]86-*-redox*)	targ_emul=elf_i386
 			targ_extra_emuls=elf_x86_64
 			;;
-i[3-7]86-*-sysv[45]*)	targ_emul=elf_i386
-			targ_extra_emuls=elf_iamcu
-			;;
 i[3-7]86-*-solaris2*)	targ_emul=elf_i386_sol2
 			targ_extra_emuls="elf_i386_ldso elf_i386 elf_iamcu elf_x86_64_sol2 elf_x86_64"
 			targ_extra_libpath=$targ_extra_emuls
 			;;
-i[3-7]86-*-unixware)	targ_emul=elf_i386
-			targ_extra_emuls=elf_iamcu
-			;;
 i[3-7]86-*-solaris*)	targ_emul=elf_i386_ldso
 			targ_extra_emuls="elf_i386"
 			targ_extra_libpath=$targ_extra_emuls
-			;;
-i[3-7]86-*-netbsdpe*)	targ_emul=i386pe
-			targ_extra_ofiles="deffilep.o pe-dll.o"
 			;;
 i[3-7]86-*-netbsd* | \
 i[3-7]86-*-netbsd*-gnu* | \
@@ -585,8 +580,18 @@ mips*-*-vxworks*)	targ_emul=elf32ebmipvxworks
 			;;
 mips*-*-windiss)	targ_emul=elf32mipswindiss
 			;;
+mips64*el-*-linux-gnuabi64)
+			targ_emul=elf64ltsmip
+			targ_extra_emuls="elf64btsmip elf32ltsmipn32 elf32btsmipn32 elf32ltsmip elf32btsmip"
+			targ_extra_libpath=$targ_extra_emuls
+			;;
 mips64*el-*-linux-*)	targ_emul=elf32ltsmipn32
 			targ_extra_emuls="elf32btsmipn32 elf32ltsmip elf32btsmip elf64ltsmip elf64btsmip"
+			targ_extra_libpath=$targ_extra_emuls
+			;;
+mips64*-*-linux-gnuabi64)
+			targ_emul=elf64btsmip
+			targ_extra_emuls="elf64ltsmip elf32btsmipn32 elf32ltsmipn32 elf32btsmip elf32ltsmip"
 			targ_extra_libpath=$targ_extra_emuls
 			;;
 mips64*-*-linux-*)	targ_emul=elf32btsmipn32
@@ -868,12 +873,6 @@ sh*eb-*-linux*)		targ_emul=shelf_linux
 			;;
 sh*-*-linux*)		targ_emul=shlelf_linux
 			targ_extra_emuls="shlelf_fd"
-			;;
-sh*l*-*-netbsdaout*)	targ_emul=shl
-			targ_extra_emuls=sh
-			;;
-sh*-*-netbsdaout*)	targ_emul=sh
-			targ_extra_emuls=shl
 			;;
 sh*l*-*-netbsd*)	targ_emul=shlelf_nbsd
 			targ_extra_emuls=shelf_nbsd

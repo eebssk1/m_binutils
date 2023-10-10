@@ -702,7 +702,7 @@ struct elf_link_hash_table
   /* Used by eh_frame code when editing .eh_frame.  */
   struct eh_frame_hdr_info eh_info;
 
-  /* Used to link unwind data in .sframe sections.  */
+  /* Used to link stack trace info in .sframe sections.  */
   struct sframe_enc_info sfe_info;
 
   /* A linked list of local symbols to be added to .dynsym.  */
@@ -2031,6 +2031,14 @@ struct elf_obj_tdata
   Elf_Internal_Shdr dynversym_hdr;
   Elf_Internal_Shdr dynverref_hdr;
   Elf_Internal_Shdr dynverdef_hdr;
+  Elf_Internal_Sym *dt_symtab;
+  bfd_byte *dt_versym;
+  bfd_byte *dt_verdef;
+  bfd_byte *dt_verneed;
+  size_t dt_symtab_count;
+  size_t dt_verdef_count;
+  size_t dt_verneed_count;
+  char *dt_strtab;
   elf_section_list * symtab_shndx_list;
   bfd_vma gp;				/* The gp value */
   unsigned int gp_size;			/* The gp size */
@@ -2070,7 +2078,7 @@ struct elf_obj_tdata
   void *line_info;
 
   /* A place to stash dwarf1 info for this bfd.  */
-  struct dwarf1_debug *dwarf1_find_line_info;
+  void *dwarf1_find_line_info;
 
   /* A place to stash dwarf2 info for this bfd.  */
   void *dwarf2_find_line_info;
@@ -2194,6 +2202,7 @@ struct elf_obj_tdata
 #define elf_dyn_lib_class(bfd)	(elf_tdata(bfd) -> dyn_lib_class)
 #define elf_bad_symtab(bfd)	(elf_tdata(bfd) -> bad_symtab)
 #define elf_flags_init(bfd)	(elf_tdata(bfd) -> o->flags_init)
+#define elf_use_dt_symtab_p(bfd) (elf_tdata(bfd) -> dt_symtab_count != 0)
 #define elf_known_obj_attributes(bfd) (elf_tdata (bfd) -> known_obj_attributes)
 #define elf_other_obj_attributes(bfd) (elf_tdata (bfd) -> other_obj_attributes)
 #define elf_known_obj_attributes_proc(bfd) \
@@ -2587,6 +2596,12 @@ extern bfd_reloc_status_type bfd_elf_perform_complex_relocation
 extern bool _bfd_elf_setup_sections
   (bfd *);
 
+extern bool _bfd_elf_get_dynamic_symbols
+  (bfd *, Elf_Internal_Phdr *, Elf_Internal_Phdr *, size_t,
+   bfd_size_type);
+extern asection *_bfd_elf_get_section_from_dynamic_symbol
+  (bfd *, Elf_Internal_Sym *);
+
 extern struct bfd_link_hash_entry *bfd_elf_define_start_stop
   (struct bfd_link_info *, const char *, asection *);
 
@@ -2721,7 +2736,7 @@ extern bool bfd_elf_link_record_dynamic_symbol
 extern int bfd_elf_link_record_local_dynamic_symbol
   (struct bfd_link_info *, bfd *, long);
 
-extern bool _bfd_elf_close_and_cleanup
+extern bool _bfd_elf_free_cached_info
   (bfd *);
 
 extern bool _bfd_elf_common_definition

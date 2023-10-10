@@ -173,6 +173,7 @@ DESCRIPTION
 .#define bfd_mach_mips16000		16000
 .#define bfd_mach_mips16		16
 .#define bfd_mach_mips5			5
+.#define bfd_mach_mips_allegrex		10111431 {* octal 'AL', 31.  *}
 .#define bfd_mach_mips_loongson_2e	3001
 .#define bfd_mach_mips_loongson_2f	3002
 .#define bfd_mach_mips_gs464		3003
@@ -947,6 +948,7 @@ DESCRIPTION
 	architecture of the file.
 
 .extern const bfd_arch_info_type bfd_default_arch_struct;
+.
 */
 
 const bfd_arch_info_type bfd_default_arch_struct =

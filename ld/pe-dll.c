@@ -27,8 +27,6 @@
 #include "safe-ctype.h"
 #include "ctf-api.h"
 
-#include <errno.h>
-#include <limits.h>
 #include <time.h>
 
 #include "ld.h"
@@ -170,7 +168,8 @@ static bfd_vma image_base;
 static bfd *filler_bfd;
 static struct bfd_section *edata_s, *reloc_s;
 static unsigned char *edata_d, *reloc_d;
-static size_t edata_sz, reloc_sz;
+static unsigned char *reloc_d = NULL;
+static size_t edata_sz, reloc_sz = 0;
 static int runtime_pseudo_relocs_created = 0;
 static bool runtime_pseudp_reloc_v2_init = false;
 
@@ -1035,9 +1034,10 @@ process_def_file_and_drectve (bfd *abfd ATTRIBUTE_UNUSED, struct bfd_link_info *
 /* Build the bfd that will contain .edata and .reloc sections.  */
 
 static void
-build_filler_bfd (int include_edata)
+build_filler_bfd (bool include_edata)
 {
   lang_input_statement_type *filler_file;
+
   filler_file = lang_add_input_file ("dll stuff",
 				     lang_input_file_is_fake_enum,
 				     NULL);
@@ -1230,36 +1230,9 @@ fill_edata (bfd *abfd, struct bfd_link_info *info ATTRIBUTE_UNUSED)
 
   memset (edata_d, 0, edata_sz);
 
-  if (pe_data (abfd)->timestamp == -1) {
-    time_t now;
-    char *source_date_epoch;
-    unsigned long long epoch;
-    char *endptr;
-
-    now = time(NULL);
-    source_date_epoch = getenv("SOURCE_DATE_EPOCH");
-    if (source_date_epoch) {
-      errno = 0;
-      epoch = strtoull(source_date_epoch, &endptr, 10);
-      if ((errno == ERANGE && (epoch == ULLONG_MAX || epoch == 0))
-	  || (errno != 0 && epoch == 0)) {
-	einfo("Environment variable $SOURCE_DATE_EPOCH: strtoull: %s\n",
-	      strerror(errno));
-      } else if (endptr == source_date_epoch) {
-	einfo("Environment variable $SOURCE_DATE_EPOCH: No digits were found: %s\n",
-	      endptr);
-      } else if (*endptr != '\0') {
-	einfo("Environment variable $SOURCE_DATE_EPOCH: Trailing garbage: %s\n",
-	      endptr);
-      } else if (epoch > ULONG_MAX) {
-	einfo("Environment variable $SOURCE_DATE_EPOCH: value must be smaller than or equal to: %lu but was found to be: %llu\n",
-	      ULONG_MAX, epoch);
-      } else {
-	now = epoch;
-      }
-    }
-    H_PUT_32 (abfd, now, edata_d + 4);
-  } else
+  if (pe_data (abfd)->timestamp == -1)
+    H_PUT_32 (abfd, time (0), edata_d + 4);
+  else
     H_PUT_32 (abfd, pe_data (abfd)->timestamp, edata_d + 4);
 
   if (pe_def_file->version_major != -1)
@@ -1450,7 +1423,7 @@ pe_find_data_imports (const char *symhead,
 	char *impname;
 
 	if (pe_dll_extra_pe_debug)
-	  printf ("%s:%s\n", __FUNCTION__, undef->root.string);
+	  printf ("%s:%s\n", __func__, undef->root.string);
 
 	strcpy (name, undef->root.string);
 	impname = name - (sizeof "__imp_" - 1);
@@ -1555,6 +1528,8 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 
   if (reloc_s == NULL || reloc_s->output_section == bfd_abs_section_ptr)
     return;
+
+  /* Set an upper bound for the total number of relocations we will have to generate.  */
   total_relocs = 0;
   for (b = info->input_bfds; b; b = b->link.next)
     for (s = b->sections; s; s = s->next)
@@ -1567,39 +1542,45 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
     {
       arelent **relocs;
       int relsize, nrelocs;
+      asymbol **symbols;
+
+      if (!bfd_generic_link_read_symbols (b))
+	{
+	  einfo (_("%F%P: %pB: could not read symbols: %E\n"), b);
+	  return;
+	}
+
+      symbols = bfd_get_outsymbols (b);
 
       for (s = b->sections; s; s = s->next)
 	{
-	  bfd_vma sec_vma = s->output_section->vma + s->output_offset;
-	  asymbol **symbols;
+	  bfd_vma sec_vma;
 
-	  /* If it's not loaded, we don't need to relocate it this way.  */
-	  if (!(s->output_section->flags & SEC_LOAD))
-	    continue;
+	  /* If the section is not going to be output, then ignore it.  */
+	  if (s->output_section == NULL)
+	    {
+	      /* FIXME: This should not happen.  Convert to the correct
+		 form here, but really, this should be investigated.  */
+	      s->output_section = bfd_abs_section_ptr;
+	      continue;
+	    }
 
 	  /* I don't know why there would be a reloc for these, but I've
 	     seen it happen - DJ  */
 	  if (s->output_section == bfd_abs_section_ptr)
 	    continue;
 
+	  /* If it's not loaded, we don't need to relocate it this way.  */
+	  if (!(s->output_section->flags & SEC_LOAD))
+	    continue;
+
+	  /* This happens when linking with --just-symbols=<file>
+	     so do not generate an error.  */
 	  if (s->output_section->vma == 0)
-	    {
-	      /* Huh?  Shouldn't happen, but punt if it does.  */
-#if 0 /* This happens when linking with --just-symbols=<file>, so do not generate an error.  */
-	      einfo (_("%P: zero vma section reloc detected: `%s' #%d f=%d\n"),
-		     s->output_section->name, s->output_section->index,
-		     s->output_section->flags);
-#endif
-	      continue;
-	    }
+	    continue;
 
-	  if (!bfd_generic_link_read_symbols (b))
-	    {
-	      einfo (_("%F%P: %pB: could not read symbols: %E\n"), b);
-	      return;
-	    }
+	  sec_vma = s->output_section->vma + s->output_offset;
 
-	  symbols = bfd_get_outsymbols (b);
 	  relsize = bfd_get_reloc_upper_bound (b, s);
 	  relocs = xmalloc (relsize);
 	  nrelocs = bfd_canonicalize_reloc (b, s, relocs, symbols);
@@ -1630,7 +1611,7 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 			  if (h->symbol_class != C_NT_WEAK || h->numaux != 1)
 			    continue;
 			  h2 = h->auxbfd->tdata.coff_obj_data->sym_hashes
-						[h->aux->x_sym.x_tagndx.l];
+						[h->aux->x_sym.x_tagndx.u32];
 			  /* We don't want a base reloc if the aux sym is not
 			     found, undefined, or if it is the constant ABS
 			     zero default value.  (We broaden that slightly by
@@ -1725,12 +1706,17 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 		    }
 		}
 	    }
+
 	  free (relocs);
 	  /* Warning: the allocated symbols are remembered in BFD and
 	     reused later, so don't free them!  */
 	}
     }
 
+  /* This can happen for example when LTO has eliminated all code.  */
+  if (total_relocs == 0)
+    return;
+  
   /* At this point, we have total_relocs relocation addresses in
      reloc_addresses, which are all suitable for the .reloc section.
      We must now create the new sections.  */
@@ -1755,9 +1741,9 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 
   reloc_sz = (reloc_sz + 3) & ~3;	/* 4-byte align.  */
   reloc_d = xmalloc (reloc_sz);
-  sec_page = (bfd_vma) -1;
+
+  page_ptr = sec_page = (bfd_vma) -1;
   reloc_sz = 0;
-  page_ptr = (bfd_vma) -1;
 
   for (i = 0; i < total_relocs; i++)
     {
@@ -1787,7 +1773,6 @@ generate_reloc (bfd *abfd, struct bfd_link_info *info)
 	  bfd_put_16 (abfd, reloc_data[i].extra, reloc_d + reloc_sz);
 	  reloc_sz += 2;
 	}
-
     }
 
   while (reloc_sz & 3)
@@ -2122,6 +2107,7 @@ make_head (bfd *parent)
   tmp_seq++;
 
   abfd = bfd_create (oname, parent);
+  free (oname);
   bfd_find_target (pe_details->object_target, abfd);
   bfd_make_writable (abfd);
 
@@ -2215,6 +2201,7 @@ make_tail (bfd *parent)
   tmp_seq++;
 
   abfd = bfd_create (oname, parent);
+  free (oname);
   bfd_find_target (pe_details->object_target, abfd);
   bfd_make_writable (abfd);
 
@@ -2286,13 +2273,12 @@ static const unsigned char jmp_ix86_bytes[] =
   0xff, 0x25, 0x00, 0x00, 0x00, 0x00, 0x90, 0x90
 };
 
-/* _function:
-  b <__imp_function>
-  nop */
 static const unsigned char jmp_aarch64_bytes[] =
 {
-  0x00, 0x00, 0x00, 0x14,
-  0x1f, 0x20, 0x03, 0xD5
+  0x10, 0x00, 0x00, 0x90, /* adrp x16, 0        */
+  0x10, 0x02, 0x00, 0x91, /* add x16, x16, #0x0 */
+  0x10, 0x02, 0x40, 0xf9, /* ldr x16, [x16]     */
+  0x00, 0x02, 0x1f, 0xd6  /* br x16             */
 };
 
 /* _function:
@@ -2337,6 +2323,31 @@ make_one (def_file_export *exp, bfd *parent, bool include_jmp_stub)
   bfd *abfd;
   const unsigned char *jmp_bytes = NULL;
   int jmp_byte_count = 0;
+  const char *internal_name = exp->internal_name;
+
+  if (!exp->flag_noname)
+    {
+      /* Check for a decorated symbol name */
+      struct decoration_hash_entry *entry;
+
+      entry = (struct decoration_hash_entry *)
+	      bfd_hash_lookup (&(coff_hash_table (&link_info)->decoration_hash),
+			       internal_name, false, false);
+      if (entry)
+	{
+	  if (entry->decorated_link)
+	    {
+	      internal_name = entry->decorated_link->root.string;
+
+	      if (pe_details->underscored && internal_name[0] == '_')
+		internal_name++;
+	    }
+	  else
+	    {
+	      einfo (_("%P: error: NULL decorated name for %s\n"), internal_name);
+	    }
+	}
+    }
 
   /* Include the jump stub section only if it is needed. A jump
      stub is needed if the symbol being imported <sym> is a function
@@ -2383,6 +2394,7 @@ make_one (def_file_export *exp, bfd *parent, bool include_jmp_stub)
   tmp_seq++;
 
   abfd = bfd_create (oname, parent);
+  free (oname);
   bfd_find_target (pe_details->object_target, abfd);
   bfd_make_writable (abfd);
 
@@ -2398,13 +2410,13 @@ make_one (def_file_export *exp, bfd *parent, bool include_jmp_stub)
   id4 = quick_section (abfd, ".idata$4", SEC_HAS_CONTENTS, 2);
   id6 = quick_section (abfd, ".idata$6", SEC_HAS_CONTENTS, 2);
 
-  if  (*exp->internal_name == '@')
+  if  (*internal_name == '@')
     {
       quick_symbol (abfd, U ("_head_"), dll_symname, "", UNDSEC,
 		    BSF_GLOBAL, 0);
       if (include_jmp_stub)
-	quick_symbol (abfd, "", exp->internal_name, "", tx, BSF_GLOBAL, 0);
-      quick_symbol (abfd, "__imp_", exp->internal_name, "", id5,
+	quick_symbol (abfd, "", internal_name, "", tx, BSF_GLOBAL, 0);
+      quick_symbol (abfd, "__imp_", internal_name, "", id5,
 		    BSF_GLOBAL, 0);
       /* Fastcall applies only to functions,
 	 so no need for auto-import symbol.  */
@@ -2414,18 +2426,18 @@ make_one (def_file_export *exp, bfd *parent, bool include_jmp_stub)
       quick_symbol (abfd, U ("_head_"), dll_symname, "", UNDSEC,
 		    BSF_GLOBAL, 0);
       if (include_jmp_stub)
-	quick_symbol (abfd, U (""), exp->internal_name, "", tx,
+	quick_symbol (abfd, U (""), internal_name, "", tx,
 		      BSF_GLOBAL, 0);
-      quick_symbol (abfd, "__imp_", U (""), exp->internal_name, id5,
+      quick_symbol (abfd, "__imp_", U (""), internal_name, id5,
 		    BSF_GLOBAL, 0);
       /* Symbol to reference ord/name of imported
 	 data symbol, used to implement auto-import.  */
       if (exp->flag_data)
-	quick_symbol (abfd, "__nm_", U (""), exp->internal_name, id6,
+	quick_symbol (abfd, "__nm_", U (""), internal_name, id6,
 		      BSF_GLOBAL,0);
     }
   if (pe_dll_compat_implib)
-    quick_symbol (abfd, "___imp_", exp->internal_name, "", id5,
+    quick_symbol (abfd, "___imp_", internal_name, "", id5,
 		  BSF_GLOBAL, 0);
 
   if (include_jmp_stub)
@@ -2460,7 +2472,8 @@ make_one (def_file_export *exp, bfd *parent, bool include_jmp_stub)
 	  quick_reloc (abfd, 8, BFD_RELOC_32, 2);
 	  break;
 	case PE_ARCH_aarch64:
-	  quick_reloc (abfd, 0, BFD_RELOC_AARCH64_JUMP26, 2);
+	  quick_reloc (abfd, 0, BFD_RELOC_AARCH64_ADR_HI21_NC_PCREL, 2);
+	  quick_reloc (abfd, 4, BFD_RELOC_AARCH64_ADD_LO12, 2);
 	  break;
 	default:
 	  abort ();
@@ -2576,6 +2589,7 @@ make_singleton_name_thunk (const char *import, bfd *parent)
   tmp_seq++;
 
   abfd = bfd_create (oname, parent);
+  free (oname);
   bfd_find_target (pe_details->object_target, abfd);
   bfd_make_writable (abfd);
 
@@ -2656,6 +2670,7 @@ make_import_fixup_entry (const char *name,
   tmp_seq++;
 
   abfd = bfd_create (oname, parent);
+  free (oname);
   bfd_find_target (pe_details->object_target, abfd);
   bfd_make_writable (abfd);
 
@@ -2714,6 +2729,7 @@ make_runtime_pseudo_reloc (const char *name ATTRIBUTE_UNUSED,
   tmp_seq++;
 
   abfd = bfd_create (oname, parent);
+  free (oname);
   bfd_find_target (pe_details->object_target, abfd);
   bfd_make_writable (abfd);
 
@@ -2735,6 +2751,7 @@ make_runtime_pseudo_reloc (const char *name ATTRIBUTE_UNUSED,
 
   rt_rel
     = quick_section (abfd, ".rdata_runtime_pseudo_reloc", SEC_HAS_CONTENTS, 2);
+  bfd_coff_set_long_section_names (abfd, true);
 
   quick_symbol (abfd, "", fixup_name, "", UNDSEC, BSF_GLOBAL, 0);
 
@@ -2805,6 +2822,7 @@ pe_create_runtime_relocator_reference (bfd *parent)
   tmp_seq++;
 
   abfd = bfd_create (oname, parent);
+  free (oname);
   bfd_find_target (pe_details->object_target, abfd);
   bfd_make_writable (abfd);
 
@@ -2893,7 +2911,7 @@ pe_create_import_fixup (arelent *rel, asection *s, bfd_vma addend, char *name,
     }
 
   else if (addend != 0)
-    einfo (_("%X%P: %C: variable '%pT' can't be auto-imported; please read the documentation for ld's --enable-auto-import for details\n"),
+    einfo (_("%X%P: %H: variable '%pT' can't be auto-imported; please read the documentation for ld's --enable-auto-import for details\n"),
 	   s->owner, s, rel->address, (*rel->sym_ptr_ptr)->name);
 }
 
@@ -2924,7 +2942,6 @@ pe_dll_generate_implib (def_file *def, const char *impfilename, struct bfd_link_
 
   bfd_set_format (outarch, bfd_archive);
   outarch->has_armap = 1;
-  outarch->flags |= BFD_DETERMINISTIC_OUTPUT;
 
   /* Work out a reasonable size of things to put onto one line.  */
   ar_head = make_head (outarch);
@@ -3531,7 +3548,7 @@ pe_implied_import_dll (const char *filename)
 
 	  if (pe_dll_extra_pe_debug)
 	    printf ("%s %s: 0x%08lx-0x%08lx (0x%08lx)\n",
-		    __FUNCTION__, sec_name, (unsigned long) vaddr,
+		    __func__, sec_name, (unsigned long) vaddr,
 		    (unsigned long) (vaddr + vsize), (unsigned long) flags);
 	}
       else if (strcmp(sec_name,".rdata") == 0)
@@ -3541,7 +3558,7 @@ pe_implied_import_dll (const char *filename)
 
 	  if (pe_dll_extra_pe_debug)
 	    printf ("%s %s: 0x%08lx-0x%08lx (0x%08lx)\n",
-		    __FUNCTION__, sec_name, (unsigned long) vaddr,
+		    __func__, sec_name, (unsigned long) vaddr,
 		    (unsigned long) (vaddr + vsize), (unsigned long) flags);
 	}
       else if (strcmp (sec_name,".bss") == 0)
@@ -3551,7 +3568,7 @@ pe_implied_import_dll (const char *filename)
 
 	  if (pe_dll_extra_pe_debug)
 	    printf ("%s %s: 0x%08lx-0x%08lx (0x%08lx)\n",
-		    __FUNCTION__, sec_name, (unsigned long) vaddr,
+		    __func__, sec_name, (unsigned long) vaddr,
 		    (unsigned long) (vaddr + vsize), (unsigned long) flags);
 	}
     }
@@ -3609,7 +3626,7 @@ pe_implied_import_dll (const char *filename)
 
 	  if (pe_dll_extra_pe_debug)
 	    printf ("%s dll-name: %s sym: %s addr: 0x%lx %s\n",
-		    __FUNCTION__, dllname, erva + name_rva,
+		    __func__, dllname, erva + name_rva,
 		    (unsigned long) func_rva, is_data ? "(data)" : "");
 	}
 
@@ -3646,7 +3663,7 @@ pe_implied_import_dll (const char *filename)
 
 	  if (pe_dll_extra_pe_debug)
 	    printf ("%s dll-name: %s sym: %s addr: 0x%lx %s\n",
-		    __FUNCTION__, dllname, erva + name_rva,
+		    __func__, dllname, erva + name_rva,
 		    (unsigned long) func_rva, is_data ? "(data)" : "");
 	}
     }
@@ -3675,18 +3692,19 @@ pe_dll_build_sections (bfd *abfd, struct bfd_link_info *info)
   pe_output_file_set_long_section_names (abfd);
   process_def_file_and_drectve (abfd, info);
 
-  if (pe_def_file->num_exports == 0 && !bfd_link_pic (info))
+  if (pe_def_file->num_exports == 0
+      && (!bfd_link_pic (info) || pe_dll_exclude_all_symbols))
     {
       if (pe_dll_enable_reloc_section)
 	{
-	  build_filler_bfd (0);
+	  build_filler_bfd (false /* edata not needed.  */);
 	  pe_output_file_set_long_section_names (filler_bfd);
 	}
       return;
     }
 
   generate_edata ();
-  build_filler_bfd (1);
+  build_filler_bfd (true /* edata is needed.  */);
   pe_output_file_set_long_section_names (filler_bfd);
 }
 
@@ -3722,6 +3740,7 @@ pe_exe_fill_sections (bfd *abfd, struct bfd_link_info *info)
   image_base = pe_data (abfd)->pe_opthdr.ImageBase;
 
   generate_reloc (abfd, info);
+
   if (reloc_sz > 0)
     {
       bfd_set_section_size (reloc_s, reloc_sz);
@@ -3735,9 +3754,15 @@ pe_exe_fill_sections (bfd *abfd, struct bfd_link_info *info)
 
       /* Do the assignments again.  */
       lang_do_assignments (lang_final_phase_enum);
+
+      reloc_s->contents = reloc_d;
     }
-  if (reloc_s)
-    reloc_s->contents = reloc_d;
+  else if (reloc_s)
+    {
+      /* Do not emit an empty reloc section.  */
+      bfd_set_section_flags (reloc_s, SEC_IN_MEMORY | SEC_EXCLUDE);
+      reloc_s->output_section = bfd_abs_section_ptr;
+    }
 }
 
 bool
