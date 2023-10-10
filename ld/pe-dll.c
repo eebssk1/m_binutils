@@ -2953,6 +2953,7 @@ pe_dll_generate_implib (def_file *def, const char *impfilename, struct bfd_link_
 
   bfd_set_format (outarch, bfd_archive);
   outarch->has_armap = 1;
+  outarch->flags |= BFD_DETERMINISTIC_OUTPUT;
 
   /* Work out a reasonable size of things to put onto one line.  */
   ar_head = make_head (outarch);
