@@ -97,6 +97,18 @@ ldelf_after_parse (void)
 	einfo (_("%F%P: common page size (0x%v) > maximum page size (0x%v)\n"),
 	       link_info.commonpagesize, link_info.maxpagesize);
     }
+
+  if (!ldelf_emit_note_fdo_package_metadata)
+    {
+      char *package_metadata = getenv("ELF_PACKAGE_METADATA");
+
+      if (package_metadata)
+	{
+	  ldelf_emit_note_fdo_package_metadata =
+	    xmalloc (strlen (package_metadata) + 1);
+	  strcpy (ldelf_emit_note_fdo_package_metadata, package_metadata);
+	}
+    }
 }
 
 /* Handle the generation of DT_NEEDED tags.  */

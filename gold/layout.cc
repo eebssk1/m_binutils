@@ -3560,15 +3560,32 @@ Layout::create_build_id()
 // If --package-metadata was used, set up the package metadata note.
 // https://systemd.io/ELF_PACKAGE_METADATA/
 
+static const char*
+get_package_metadata()
+{
+  if (parameters->options().user_set_package_metadata())
+    {
+      const char* desc = parameters->options().package_metadata();
+      if (strcmp(desc, "") != 0)
+	return desc;
+    }
+
+  if (getenv("ELF_PACKAGE_METADATA"))
+    {
+      const char* desc = getenv("ELF_PACKAGE_METADATA");
+      if (strcmp(desc, "") != 0)
+	return desc;
+    }
+
+  return NULL;
+}
+
 void
 Layout::create_package_metadata()
 {
-  if (!parameters->options().user_set_package_metadata())
-    return;
-
-  const char* desc = parameters->options().package_metadata();
-  if (strcmp(desc, "") == 0)
-    return;
+  const char* desc = get_package_metadata();
+  if (desc == NULL)
+     return;
 
 #ifdef HAVE_JANSSON
   json_error_t json_error;
