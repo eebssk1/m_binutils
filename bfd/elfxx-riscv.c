@@ -1213,6 +1213,7 @@ static struct riscv_implicit_subset riscv_implicit_subsets[] =
   {"zcd", "+d,+zca", check_implicit_always},
   {"zcf", "+f,+zca", check_implicit_always},
   {"zcmp", "+zca", check_implicit_always},
+  {"zcmop", "+zca", check_implicit_always},
 
   {"shcounterenw", "+h", check_implicit_always},
   {"shgatpa", "+h", check_implicit_always},
@@ -1344,6 +1345,7 @@ static struct riscv_supported_ext riscv_supported_std_z_ext[] =
   {"zihintntl",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zihintpause",	ISA_SPEC_CLASS_DRAFT,		2, 0,  0 },
   {"zihpm",		ISA_SPEC_CLASS_DRAFT,		2, 0,  0 },
+  {"zimop",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zmmul",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"za64rs",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"za128rs",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
@@ -1420,6 +1422,7 @@ static struct riscv_supported_ext riscv_supported_std_z_ext[] =
   {"zcb",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zcf",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zcd",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
+  {"zcmop",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {"zcmp",		ISA_SPEC_CLASS_DRAFT,		1, 0,  0 },
   {NULL, 0, 0, 0, 0}
 };
@@ -2556,6 +2559,8 @@ riscv_multi_subset_supports (riscv_parse_subset_t *rps,
 		  || riscv_subset_supports (rps, "zca")));
     case INSN_CLASS_ZIHINTPAUSE:
       return riscv_subset_supports (rps, "zihintpause");
+    case INSN_CLASS_ZIMOP:
+      return riscv_subset_supports (rps, "zimop");
     case INSN_CLASS_M:
       return riscv_subset_supports (rps, "m");
     case INSN_CLASS_ZMMUL:
@@ -2708,6 +2713,8 @@ riscv_multi_subset_supports (riscv_parse_subset_t *rps,
     case INSN_CLASS_ZCB_AND_ZMMUL:
       return (riscv_subset_supports (rps, "zcb")
 	      && riscv_subset_supports (rps, "zmmul"));
+    case INSN_CLASS_ZCMOP:
+      return riscv_subset_supports (rps, "zcmop");
     case INSN_CLASS_ZCMP:
       return riscv_subset_supports (rps, "zcmp");
     case INSN_CLASS_SVINVAL:
@@ -2803,6 +2810,8 @@ riscv_multi_subset_supports_ext (riscv_parse_subset_t *rps,
 	return _("c' or `zca");
     case INSN_CLASS_ZIHINTPAUSE:
       return "zihintpause";
+    case INSN_CLASS_ZIMOP:
+      return "zimop";
     case INSN_CLASS_M:
       return "m";
     case INSN_CLASS_ZMMUL:
@@ -2982,6 +2991,8 @@ riscv_multi_subset_supports_ext (riscv_parse_subset_t *rps,
       return _("zcb' and `zbb");
     case INSN_CLASS_ZCB_AND_ZMMUL:
       return _("zcb' and `zmmul', or `zcb' and `m");
+    case INSN_CLASS_ZCMOP:
+      return "zcmop";
     case INSN_CLASS_ZCMP:
       return "zcmp";
     case INSN_CLASS_SVINVAL:
