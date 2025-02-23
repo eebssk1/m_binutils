@@ -633,7 +633,7 @@ print_filename_and_address (const char * filename, file_ptr address)
     case 8:
       if (sizeof (address) > sizeof (long))
 	{
-#ifndef __MSVCRT__
+#if !defined(__MSVCRT__) || defined(__USE_MINGW_ANSI_STDIO)
 	  printf ("%7llo ", (unsigned long long) address);
 #else
 	  printf ("%7I64o ", (unsigned long long) address);
@@ -646,7 +646,7 @@ print_filename_and_address (const char * filename, file_ptr address)
     case 10:
       if (sizeof (address) > sizeof (long))
 	{
-#ifndef __MSVCRT__
+#if !defined(__MSVCRT__) || defined(__USE_MINGW_ANSI_STDIO)
 	  printf ("%7llu ", (unsigned long long) address);
 #else
 	  printf ("%7I64d ", (unsigned long long) address);
@@ -659,7 +659,7 @@ print_filename_and_address (const char * filename, file_ptr address)
     case 16:
       if (sizeof (address) > sizeof (long))
 	{
-#ifndef __MSVCRT__
+#if !defined(__MSVCRT__) || defined(__USE_MINGW_ANSI_STDIO)
 	  printf ("%7llx ", (unsigned long long) address);
 #else
 	  printf ("%7I64x ", (unsigned long long) address);
