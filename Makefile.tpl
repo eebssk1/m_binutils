@@ -1012,6 +1012,8 @@ do-check:
 	@: $(MAKE); $(unstage)
 	@r=`${PWD_COMMAND}`; export r; \
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
+	echo "Unset ELF_PACKAGE_METADATA for tests"; \
+	export -n ELF_PACKAGE_METADATA; \
 	$(MAKE) $(RECURSE_FLAGS_TO_PASS) check-host check-target
 
 # Automated reporting of test results.
@@ -1393,6 +1395,7 @@ check-[+module+]:
 	s=`cd $(srcdir); ${PWD_COMMAND}`; export s; \
 	$(HOST_EXPORTS) [+ IF bootstrap +]$(EXTRA_HOST_EXPORTS)[+
 	ENDIF bootstrap +] \
+	export -n ELF_PACKAGE_METADATA; \
 	(cd $(HOST_SUBDIR)/[+module+] && \
 	  $(MAKE) $(FLAGS_TO_PASS) [+extra_make_flags+][+
 	  IF bootstrap +] $(EXTRA_BOOTSTRAP_FLAGS)[+ ENDIF bootstrap +] check)
