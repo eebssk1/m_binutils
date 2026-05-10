@@ -100,15 +100,8 @@ fragment <<EOF
   link_info.error_execstack = DEFAULT_LD_ERROR_EXECSTACK;
   link_info.warn_is_error_for_rwx_segments = DEFAULT_LD_ERROR_RWX_SEGMENTS;
   link_info.memory_seal = DEFAULT_LD_Z_MEMORY_SEAL;
-
-  char *package_metadata = getenv("ELF_PACKAGE_METADATA");
-  if (package_metadata) {
-    char * const p = xmalloc (strlen (package_metadata) + 1);
-    strcpy (p, package_metadata);
-    ldelf_emit_note_fdo_package_metadata = (const char *)p;
-  }
 }
- 
+
 EOF
 fi
 
