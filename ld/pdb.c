@@ -1879,7 +1879,7 @@ parse_inlinee_lines (uint8_t *data, uint32_t size, uint8_t **bufptr,
       return false;
     }
 
-  version = bfd_getl32 (data + sizeof (uint32_t) + sizeof (uint32_t));
+  version = bfd_getl32 (data);
   if (version != CV_INLINEE_SOURCE_LINE_SIGNATURE)
     {
       einfo (_("%P: warning: unexpected DEBUG_S_INLINEELINES version %u\n"),
@@ -4360,7 +4360,7 @@ create_source_info_substream (void **data, uint32_t *size,
 			      struct source_files_info *source)
 {
   uint16_t dedupe_source_files_count = 0;
-  uint16_t source_files_count = 0;
+  uint32_t source_files_count = 0;
   uint32_t strings_len = 0;
   uint8_t *ptr;
 
